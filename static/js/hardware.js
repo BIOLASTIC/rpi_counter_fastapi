@@ -16,35 +16,36 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function updateHardwareDisplay(status) {
-        // Module Status
-        updateStatusBadge('hw-camera', status.camera_status);
-        updateStatusBadge('hw-gpio', status.gpio_status);
-        updateStatusBadge('hw-io-module', status.io_module_status);
-        
-        // Sensor Status
-        updateStatusBadge('hw-sensor-1', status.sensor_1_status ? 'TRIGGERED' : 'CLEARED');
-        updateStatusBadge('hw-sensor-2', status.sensor_2_status ? 'TRIGGERED' : 'CLEARED');
-        
-        // Relay Status
-        updateStatusBadge('hw-conveyor-relay', status.conveyor_relay_status);
+        // --- DEFINITIVE FIX: Update all 5 GPIO devices ---
+        updateStatusBadge('hw-conveyor-relay', status.conveyor_relay_status ? 'ON' : 'OFF');
         updateStatusBadge('hw-gate-relay', status.gate_relay_status ? 'ON' : 'OFF');
+        updateStatusBadge('hw-led-green', status.led_green_status ? 'ON' : 'OFF');
+        updateStatusBadge('hw-led-red', status.led_red_status ? 'ON' : 'OFF');
+        updateStatusBadge('hw-buzzer', status.buzzer_status ? 'ON' : 'OFF');
     }
     
-    function updateStatusBadge(id, status) {
+    function updateStatusBadge(id, statusText) {
         const el = document.getElementById(id);
         if (!el) return;
-
-        const statusText = status.toString().toUpperCase().replace("_", " ");
         el.textContent = statusText;
         el.className = 'badge';
-        
-        const successStates = ['connected', 'ok', 'CLEARED', 'OFF'];
-        const activeStates = ['ON', 'TRIGGERED'];
-        
-        if (successStates.includes(statusText)) el.classList.add('bg-success');
-        else if (activeStates.includes(statusText)) el.classList.add('bg-warning', 'text-dark');
-        else el.classList.add('bg-danger');
+        if (statusText === 'ON') el.classList.add('bg-warning', 'text-dark');
+        else el.classList.add('bg-success');
     }
+
+    // --- DEFINITIVE FIX: Generic listener for all toggle buttons ---
+    document.querySelectorAll('.btn-toggle-pin').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            const pinName = event.target.dataset.pinName;
+            if (!pinName) return;
+            try {
+                // Use the new generic API endpoint
+                await fetch(`/api/v1/gpio/pin/${pinName}/toggle`, { method: 'POST' });
+            } catch (error) {
+                console.error('Error sending toggle command:', error);
+            }
+        });
+    });
 
     connect();
 });

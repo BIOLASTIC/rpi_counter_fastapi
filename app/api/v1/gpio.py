@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Request, Path
+from fastapi import APIRouter, Depends, Request, HTTPException, Path
+from typing import Literal
 from app.core.gpio_controller import AsyncGPIOController
 
 router = APIRouter()
@@ -6,20 +7,18 @@ router = APIRouter()
 def get_gpio_controller(request: Request) -> AsyncGPIOController:
     return request.app.state.gpio_controller
 
-@router.get("/status")
-async def get_gpio_status(gpio: AsyncGPIOController = Depends(get_gpio_controller)):
-    """Get the status of all configured GPIO devices."""
-    return {
-        "conveyor": await gpio.get_conveyor_status(),
-        "gate": await gpio.get_gate_position(),
-    }
-
-@router.post("/conveyor/{action}")
-async def control_conveyor(action: str = Path(..., description="'start' or 'stop'"), gpio: AsyncGPIOController = Depends(get_gpio_controller)):
-    if action == "start":
-        await gpio.start_conveyor()
-        return {"message": "Conveyor started."}
-    elif action == "stop":
-        await gpio.stop_conveyor()
-        return {"message": "Conveyor stopped."}
-    return {"error": "Invalid action."}
+@router.post("/pin/{name}/toggle", status_code=200)
+async def toggle_pin_by_name(
+    gpio: AsyncGPIOController = Depends(get_gpio_controller),
+    # This list now includes all controllable pins
+    name: Literal["conveyor", "gate", "led_green", "led_red", "buzzer"] = Path(...)
+):
+    """
+    Toggles the state of any configured output pin (Relay, LED, Buzzer).
+    Returns the new state ('ON' or 'OFF').
+    """
+    new_state = await gpio.toggle_pin(name)
+    if new_state is None:
+        raise HTTPException(status_code=404, detail=f"Pin '{name}' not found.")
+    
+    return {"pin": name, "new_state": "ON" if new_state else "OFF"}

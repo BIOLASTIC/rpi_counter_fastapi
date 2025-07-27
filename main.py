@@ -1,6 +1,6 @@
 """
-FINAL REVISION: Injects the SENSORS configuration object into the
-SystemService to ensure it uses the correct channels for status reporting.
+FINAL REVISION: Removes an incorrect keyword argument from the
+AsyncSystemService instantiation, resolving the TypeError on startup.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -31,7 +31,6 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ... (startup sequence is mostly the same) ...
     print(f"--- Application starting up in {settings.APP_ENV} mode... ---")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -60,13 +59,14 @@ async def lifespan(app: FastAPI):
         event_callback=app.state.detection_service.handle_sensor_event
     )
     
-    # DEFINITIVE FIX: Inject the SENSORS config into the SystemService
+    # --- DEFINITIVE FIX ---
+    # The 'detection_service' keyword argument was incorrect and has been removed.
     app.state.system_service = AsyncSystemService(
         gpio_controller=app.state.gpio_controller,
         camera_manager=app.state.camera_manager,
         sensor_handler=app.state.sensor_handler,
         db_session_factory=AsyncSessionFactory,
-        sensor_config=settings.SENSORS # Pass the new settings object
+        sensor_config=settings.SENSORS
     )
 
     # Start Background Services
@@ -95,7 +95,6 @@ async def lifespan(app: FastAPI):
     yield
     
     print("--- Application shutting down... ---")
-    # ... (shutdown logic is unchanged)
     app.state.broadcast_task.cancel()
     await app.state.sensor_handler.stop()
     app.state.notification_service.stop()
@@ -105,7 +104,6 @@ async def lifespan(app: FastAPI):
     print("--- Application shutdown complete. ---")
 
 def create_app() -> FastAPI:
-    # ... (create_app is unchanged)
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION, lifespan=lifespan)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
