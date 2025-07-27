@@ -1,6 +1,7 @@
 """
-FINAL REVISION: Adds a generic `toggle_pin` method to control all
-output devices (relays, LEDs, buzzers) and makes status checking more robust.
+FINAL REVISION: Restores the missing `health_check` method to the
+AsyncGPIOController. This resolves the final AttributeError in the
+background broadcast loop.
 """
 import asyncio
 from enum import Enum
@@ -78,13 +79,13 @@ class AsyncGPIOController:
         is_active = await self.get_pin_status("gate")
         return GatePosition.OPEN if is_active else GatePosition.CLOSED
         
-    # --- DEFINITIVE FIX: Generic toggle for ALL output pins ---
     async def toggle_pin(self, name: str) -> Optional[bool]:
-        """Toggles any output pin by name and returns its new state."""
-        if name not in self._pins:
-            return None
-        
-        device = self._pins[name]
-        # Use the standard .toggle() method which exists on all output devices
-        await asyncio.to_thread(device.toggle)
-        return await self.get_pin_status(name)
+        if name in self._pins:
+            await asyncio.to_thread(self._pins[name].toggle)
+            return await self.get_pin_status(name)
+        return None
+
+    # --- DEFINITIVE FIX: Restore the missing health_check method ---
+    async def health_check(self) -> GPIOHealthStatus:
+        """Returns the current health status of the GPIO subsystem."""
+        return self.health_status
