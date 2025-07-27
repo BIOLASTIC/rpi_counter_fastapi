@@ -1,0 +1,45 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Hardware Connections & Live Status</h1>
+    <div class="row">
+        <!-- GPIO Pinout Column -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-pin-map-fill"></i> GPIO Pin Configuration (BCM)</div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead><tr><th>Device</th><th>BCM Pin</th><th>Live Status</th></tr></thead>
+                        <tbody>
+                            <tr><td>Conveyor Relay</td><td>{{ config.GPIO.CONVEYOR_RELAY }}</td><td><span class="badge" id="hw-conveyor-relay">--</span></td></tr>
+                            <tr><td>Gate Relay</td><td>{{ config.GPIO.GATE_RELAY }}</td><td><span class="badge" id="hw-gate-relay">--</span></td></tr>
+                            <tr><td>Status LED (Green)</td><td>{{ config.GPIO.STATUS_LED_GREEN }}</td><td><span id="hw-led-green">--</span></td></tr>
+                            <tr><td>Status LED (Red)</td><td>{{ config.GPIO.STATUS_LED_RED }}</td><td><span id="hw-led-red">--</span></td></tr>
+                             <tr><td>Buzzer</td><td>{{ config.GPIO.BUZZER }}</td><td><span id="hw-buzzer">--</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Module Status Column -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-motherboard-fill"></i> Module Live Status</div>
+                 <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">Camera<span class="badge" id="hw-camera">--</span></li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">GPIO Controller<span class="badge" id="hw-gpio">--</span></li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">Modbus IO Module<span class="badge" id="hw-io-module">--</span></li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center ps-5"><i class="bi bi-arrow-return-right"></i> Proximity Sensor 1<span class="badge" id="hw-sensor-1">--</span></li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center ps-5"><i class="bi bi-arrow-return-right"></i> Proximity Sensor 2<span class="badge" id="hw-sensor-2">--</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/hardware.js"></script>
+{% endblock %}

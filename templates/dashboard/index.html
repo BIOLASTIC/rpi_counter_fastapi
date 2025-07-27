@@ -1,0 +1,48 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="row">
+    <!-- Box Counter Card -->
+    <div class="col-xl-4 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <h5 class="card-title">Box Count</h5>
+                <p class="display-1 fw-bold" id="box-count">0</p>
+                <p class="text-muted" id="detection-state">IDLE</p>
+                <button class="btn btn-danger" id="reset-button">Reset Counter</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Status Card -->
+    <div class="col-xl-4 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">System Status</h5>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">CPU Usage <span class="badge bg-secondary" id="cpu-usage">--%</span></li>
+                    <li class="list-group-item d-flex justify-content-between">Memory Usage <span class="badge bg-secondary" id="mem-usage">--%</span></li>
+                    <li class="list-group-item d-flex justify-content-between">CPU Temp <span class="badge bg-secondary" id="cpu-temp">--°C</span></li>
+                    <li class="list-group-item d-flex justify-content-between">Camera <span class="badge bg-danger" id="camera-status">DISCONNECTED</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hardware Control Card -->
+    <div class="col-xl-4 col-md-12 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Hardware Control</h5>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success" id="conveyor-start-btn">Start Conveyor</button>
+                    <button class="btn btn-warning" id="conveyor-stop-btn">Stop Conveyor</button>
+                    <hr>
+                    <button class="btn btn-outline-danger" id="emergency-stop-btn">Emergency Stop</button>
+                </div>
+                 <div class="mt-3 text-center">Conveyor: <span class="badge bg-secondary" id="conveyor-status">STOPPED</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
