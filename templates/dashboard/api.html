@@ -1,0 +1,75 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>{{ api_title }} - API Reference</h1>
+        <span class="badge bg-secondary fs-6">{{ api_version }}</span>
+    </div>
+
+    <p class="lead">
+        This is a dynamically generated list of available API endpoints. It automatically updates when new routes are added to the application. For a fully interactive experience, visit the <a href="/docs">Swagger UI</a>.
+    </p>
+
+    {% for path, methods in api_paths.items() %}
+        {% if not path.startswith('/.well-known') and path != '/' %}
+            <div class="card mb-4">
+                <div class="card-header fs-5 font-monospace">
+                    {{ path }}
+                </div>
+                <div class="card-body">
+                    {% for method, details in methods.items() %}
+                        <div class="endpoint mb-4">
+                            <h5 class="mb-2">
+                                <span class="badge method-{{ method.upper() }}">{{ method.upper() }}</span>
+                                <span class="ms-2">{{ details.summary or 'No summary' }}</span>
+                            </h5>
+                            <p class="text-muted">{{ details.description or '' }}</p>
+
+                            {% if details.parameters %}
+                                <h6>Parameters</h6>
+                                <table class="table table-sm table-bordered">
+                                    <thead><tr><th>Name</th><th>In</th><th>Required</th><th>Schema</th></tr></thead>
+                                    <tbody>
+                                    {% for param in details.parameters %}
+                                        <tr>
+                                            <td><code class="font-monospace">{{ param.name }}</code></td>
+                                            <td>{{ param.in }}</td>
+                                            <td>{{ 'Yes' if param.required else 'No' }}</td>
+                                            <td>{{ param.schema.type }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            {% endif %}
+                            
+                            {% if details.requestBody %}
+                                <h6>Request Body</h6>
+                                <pre class="bg-dark text-light p-3 rounded"><code>{% set content_schema = details.requestBody.content['application/json'].schema %}
+{% if content_schema['$ref'] -%}
+{
+    // See schema: {{ content_schema['$ref'] }}
+}
+{% else -%}
+{{ { "example": content_schema.get("example", "No example available") } | tojson(indent=4) }}
+{% endif -%}
+</code></pre>
+                            {% endif %}
+
+                        </div>
+                        {% if not loop.last %}<hr>{% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    {% endfor %}
+
+</div>
+
+<style>
+    .method-GET { background-color: #28a745; }
+    .method-POST { background-color: #007bff; }
+    .method-PUT { background-color: #ffc107; color: #212529 !important; }
+    .method-DELETE { background-color: #dc3545; }
+</style>
+{% endblock %}

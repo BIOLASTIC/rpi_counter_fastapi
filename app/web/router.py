@@ -21,16 +21,30 @@ async def read_status_page(request: Request):
 
 @router.get("/hardware", response_class=HTMLResponse)
 async def read_hardware_page(request: Request):
-    """Serves the new detailed hardware page, passing in config settings."""
     templates = request.app.state.templates
     return templates.TemplateResponse("dashboard/hardware.html", {"request": request, "config": settings})
 
 @router.get("/logs", response_class=HTMLResponse)
 async def read_logs_page(request: Request, session: AsyncSession = Depends(get_async_session)):
-    """Serves the new logs page, fetching recent logs from the database."""
     templates = request.app.state.templates
     result = await session.execute(
         select(EventLog).order_by(EventLog.timestamp.desc()).limit(100)
     )
     logs = result.scalars().all()
     return templates.TemplateResponse("dashboard/logs.html", {"request": request, "logs": logs})
+
+@router.get("/api-docs", response_class=HTMLResponse)
+async def read_api_docs_page(request: Request):
+    """
+    This route generates a custom API documentation page.
+    It fetches the auto-generated OpenAPI schema from the FastAPI app instance.
+    """
+    templates = request.app.state.templates
+    # The openapi_schema is a dictionary containing all API info
+    openapi_schema = request.app.openapi()
+    return templates.TemplateResponse("dashboard/api.html", {
+        "request": request,
+        "api_title": openapi_schema.get("info", {}).get("title", "API"),
+        "api_version": openapi_schema.get("info", {}).get("version", ""),
+        "api_paths": openapi_schema.get("paths", {})
+    })
