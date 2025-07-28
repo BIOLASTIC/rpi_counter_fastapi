@@ -1,6 +1,8 @@
 """
-REVISED: Adds verbose logging to show the raw hardware signal and the
-corrected event being generated, aiding in debugging sensor issues.
+REVISED: The polling loop now handles read failures (returns of None)
+gracefully by resetting the last known state to a safe 'CLEAR' default.
+This prevents the UI from getting stuck showing an old 'TRIGGERED' state
+when the connection to the sensor module is lost.
 """
 import asyncio
 from typing import Callable, Coroutine, Optional, Dict
@@ -16,9 +18,12 @@ class AsyncProximitySensorHandler:
         self.event_callback = event_callback
         self.polling_interval_sec = settings.MODBUS.POLLING_MS / 1000.0
         self._monitoring_task: Optional[asyncio.Task] = None
-        self._last_known_corrected_states: Dict[int, bool] = {1: False, 2: False}
+        self._last_known_corrected_states: Dict[int, bool] = {
+            settings.SENSORS.ENTRY_CHANNEL: False,
+            settings.SENSORS.EXIT_CHANNEL: False,
+        }
         self._module_health: ModuleHealthStatus = ModuleHealthStatus.DISCONNECTED
-        self._verbose = settings.LOGGING.VERBOSE_LOGGING # Store logging setting
+        self._verbose = settings.LOGGING.VERBOSE_LOGGING
 
     def get_last_known_corrected_states(self) -> Dict[int, bool]:
         """Returns the CORRECTED state (True means object detected)."""
@@ -28,14 +33,12 @@ class AsyncProximitySensorHandler:
         return self._module_health
 
     def start(self):
-        """Starts the background task for polling sensor states."""
         if self._monitoring_task and not self._monitoring_task.done():
             return
-        print(f"Sensor Handler: Starting polling in hardware-locked mode (LOW signal = TRIGGERED). Polling every {self.polling_interval_sec * 1000}ms.")
+        print(f"Sensor Handler: Starting polling in hardware-locked mode. Polling every {self.polling_interval_sec * 1000}ms.")
         self._monitoring_task = asyncio.create_task(self._poll_sensors())
 
     async def stop(self):
-        """Stops the sensor monitoring task."""
         if self._monitoring_task: self._monitoring_task.cancel()
         try: await self._monitoring_task
         except asyncio.CancelledError: pass
@@ -44,17 +47,19 @@ class AsyncProximitySensorHandler:
     async def _poll_sensors(self):
         while True:
             raw_states = await self.io_controller.read_input_channels()
+            
             if raw_states is not None:
+                if self._module_health != ModuleHealthStatus.CONNECTED:
+                    print("Sensor Handler: Re-established connection to IO module.")
                 self._module_health = ModuleHealthStatus.CONNECTED
                 
                 corrected_states = {}
-                for sensor_id, raw_state in raw_states.items():
-                    # LOW signal (False) means TRIGGERED
+                for sensor_id in self._last_known_corrected_states.keys():
+                    raw_state = raw_states.get(sensor_id, True) # Default to True (untriggered) if not present
                     is_triggered = not raw_state
                     corrected_states[sensor_id] = is_triggered
 
                     if self._last_known_corrected_states.get(sensor_id) is not is_triggered:
-                        # --- LOGGING FIX ---
                         if self._verbose:
                             print(f"[Sensor Event] ID {sensor_id}: Raw Signal={raw_state} -> Corrected State={'TRIGGERED' if is_triggered else 'CLEARED'}")
                         
@@ -66,6 +71,18 @@ class AsyncProximitySensorHandler:
                 
                 self._last_known_corrected_states = corrected_states
             else:
+                # --- DEFINITIVE FIX for Stale Data ---
+                if self._module_health == ModuleHealthStatus.CONNECTED:
+                    print("Sensor Handler: Lost connection to IO module. Sensor states will default to CLEAR.")
+                
                 self._module_health = ModuleHealthStatus.DISCONNECTED
-            
+                
+                # Reset states to a safe, 'CLEAR' default if any were 'TRIGGERED'
+                if any(self._last_known_corrected_states.values()):
+                    for sensor_id in self._last_known_corrected_states:
+                        self._last_known_corrected_states[sensor_id] = False
+                        # Send a CLEAR event to ensure the state machine and UI are reset
+                        event = SensorEvent(sensor_id=sensor_id, new_state=SensorState.CLEARED)
+                        asyncio.create_task(self.event_callback(event))
+
             await asyncio.sleep(self.polling_interval_sec)

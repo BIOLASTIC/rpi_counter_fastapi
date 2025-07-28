@@ -1,7 +1,8 @@
 """
-FINAL REVISION: The Modbus client now correctly reads all 8 discrete
-inputs and maps them to their proper channel numbers (1-8). This resolves
-the bug where the app was blind to the status of higher-numbered channels.
+FINAL REVISION: The Modbus client has been rewritten to be more robust
+and self-healing. It now ensures a connection before every read and handles
+ConnectionExceptions and Timeouts gracefully, which was the root cause
+of the "stuck" sensor state problem.
 """
 import asyncio
 from enum import Enum
@@ -36,18 +37,18 @@ class AsyncUSRIOController:
     async def connect(self) -> bool:
         if self._is_connected:
             return True
-        print("USR-8000 Real Client: Attempting to connect...")
         try:
+            # The 'await' is crucial here for the async client
             is_connected = await self.client.connect()
             if is_connected:
                 self._is_connected = True
-                print("USR-8000 Real Client: Connection successful.")
                 return True
             else:
-                print("USR-8000 Real Client: Connection failed.")
+                self._is_connected = False
                 return False
         except Exception as e:
-            print(f"USR-8000 Real Client: Error during connection: {e}")
+            print(f"USR-8000 Real Client: Error during connection attempt: {e}")
+            self._is_connected = False
             return False
 
     async def disconnect(self) -> None:
@@ -57,36 +58,41 @@ class AsyncUSRIOController:
             self._is_connected = False
 
     async def read_input_channels(self) -> Optional[Dict[int, bool]]:
-        """Reads all 8 discrete input channels from the hardware."""
-        if not self._is_connected:
-            if not await self.connect():
-                return None
+        """
+        Reads all 8 discrete input channels from the hardware. This method
+        is now designed to be self-healing and robust against connection drops.
+        """
+        # --- DEFINITIVE FIX: Ensure connection before every read ---
+        if not await self.connect():
+            # If we can't even connect, fail immediately.
+            return None
         
         try:
-            # --- DEFINITIVE FIX FOR SENSOR READING ---
-            # Read all 8 inputs starting from address 0.
-            # This matches the screenshot and the hardware manual.
             result = await self.client.read_discrete_inputs(
                 address=0, count=8, slave=self._config.DEVICE_ADDRESS
             )
 
             if result.isError():
                 print(f"USR-8000 Real Client: Modbus read error: {result}")
+                # An error suggests the connection might be bad, so disconnect.
+                await self.disconnect()
                 return None
             
-            # Create a dictionary mapping the channel number (1-8) to its boolean state.
-            # result.bits is a list where index 0 is Input 1, index 1 is Input 2, etc.
-            return {i + 1: result.bits[i] for i in range(len(result.bits))}
+            # This is a list of 8 booleans.
+            bits = result.bits[:8]
+            return {i + 1: bits[i] for i in range(len(bits))}
 
         except ConnectionException as e:
-            print(f"USR-8000 Real Client: Connection lost during read: {e}")
-            self._is_connected = False
+            print(f"USR-8000 Real Client: Connection lost during read: {e}. Will attempt to reconnect on next poll.")
+            await self.disconnect() # Force a full reconnect next time
             return None
         except asyncio.TimeoutError:
             print("USR-8000 Real Client: Read timed out. Check wiring and device status.")
+            await self.disconnect() # Force a full reconnect next time
             return None
         except Exception as e:
             print(f"USR-8000 Real Client: Unhandled error during read: {e}")
+            await self.disconnect() # Force a full reconnect next time
             return None
 
     async def get_module_status(self) -> ModuleHealthStatus:
