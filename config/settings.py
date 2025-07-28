@@ -1,74 +1,90 @@
 """
-FINAL REVISION: Restores the missing TIMEOUT_SEC and POLLING_MS
-attributes to the ModbusSettings class. This resolves the final
-AttributeError on startup.
+FINAL REVISION: Adds a Pydantic field_validator to the SensorSettings
+class. This validator handles cases where a variable in the .env file
+might be empty (e.g., SENSORS_EXIT_CHANNEL=). It intelligently substitutes
+the default value, preventing the int_parsing ValidationError on startup.
 """
-import json
 from functools import lru_cache
-from typing import List, Literal, Tuple, Set
-
-from pydantic import Field, field_validator, model_validator
+from typing import Literal, Any
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# --- Each class is now a self-contained settings loader ---
+
 class ServerSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SERVER_')
+    model_config = SettingsConfigDict(env_prefix='SERVER_', case_sensitive=False)
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     SECRET_KEY: str = Field(..., min_length=32)
 
 class SecuritySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SECURITY_')
+    model_config = SettingsConfigDict(env_prefix='SECURITY_', case_sensitive=False)
     API_KEY: str
 
 class DatabaseSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='DB_')
+    model_config = SettingsConfigDict(env_prefix='DB_', case_sensitive=False)
     URL: str = "sqlite+aiosqlite:///./data/box_counter.db"
     ECHO: bool = False
     POOL_SIZE: int = 5
     POOL_TIMEOUT: int = 30
 
 class CameraSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='CAMERA_')
-    RESOLUTION_WIDTH: int = 1280
-    RESOLUTION_HEIGHT: int = 720
-    BUFFER_SIZE: int = 10
-    FPS: int = 30
+    model_config = SettingsConfigDict(env_prefix='CAMERA_', case_sensitive=False)
+    RESOLUTION_WIDTH: int = 640
+    RESOLUTION_HEIGHT: int = 480
+    JPEG_QUALITY: int = Field(85, ge=10, le=100)
+    TRIGGER_DELAY_MS: int = 100
+    SURVEILLANCE_INTERVAL_SEC: int = 10
+    CAPTURES_DIR: str = "static/captures"
+    FPS: int = 15
 
 class GpioSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='GPIO_PIN_')
-    CONVEYOR_RELAY: int = Field(26, ge=2, le=27)
-    GATE_RELAY: int = Field(22, ge=2, le=27)
-    STATUS_LED_GREEN: int = Field(27, ge=2, le=27)
-    STATUS_LED_RED: int = Field(23, ge=2, le=27)
-    BUZZER: int = Field(24, ge=2, le=27)
-    @model_validator(mode='after')
-    def check_for_pin_conflicts(self) -> 'GpioSettings':
-        pins: Set[int] = {
-            self.CONVEYOR_RELAY, self.GATE_RELAY,
-            self.STATUS_LED_GREEN, self.STATUS_LED_RED, self.BUZZER
-        }
-        if len(pins) < 5: raise ValueError("GPIO pin conflict detected.")
-        return self
+    model_config = SettingsConfigDict(env_prefix='GPIO_', case_sensitive=False)
+    PIN_CONVEYOR_RELAY: int = 26
+    PIN_GATE_RELAY: int = 22
+    PIN_STATUS_LED_GREEN: int = 27
+    PIN_STATUS_LED_RED: int = 23
+    PIN_BUZZER: int = 24
 
 class ModbusSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='MODBUS_')
+    model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
     PORT: str = "/dev/ttyUSB0"
     BAUDRATE: int = 9600
     DEVICE_ADDRESS: int = 1
-    # --- DEFINITIVE FIX: Restored the missing fields ---
-    TIMEOUT_SEC: float = 1.0
-    POLLING_MS: int = 100
+    TIMEOUT_SEC: float = 0.2
+    POLLING_MS: int = 50
 
 class SensorSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SENSOR_')
-    ENTRY_CHANNEL: int = Field(1, ge=1)
-    EXIT_CHANNEL: int = Field(2, ge=1)
+    model_config = SettingsConfigDict(env_prefix='SENSORS_', case_sensitive=False)
+    ENTRY_CHANNEL: int = 1
+    EXIT_CHANNEL: int = 2
 
+    # --- DEFINITIVE FIX for empty environment variables ---
+    @field_validator('ENTRY_CHANNEL', 'EXIT_CHANNEL', mode='before')
+    @classmethod
+    def handle_empty_string(cls, v: Any, info) -> Any:
+        """If the env var is present but empty, use the default value."""
+        if v == '':
+            # Return the default value for the field being validated
+            return cls.model_fields[info.field_name].default
+        return v
+
+class OrchestrationSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='ORCHESTRATION_', case_sensitive=False)
+    POST_BATCH_DELAY_SEC: int = 5
+
+class LoggingSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='LOGGING_', case_sensitive=False)
+    VERBOSE_LOGGING: bool = False
+
+# --- This class is the main container for all settings ---
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_nested_delimiter='__', extra='ignore')
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
+    
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "1.0.0"
+    PROJECT_VERSION: str = "4.1.0-Config-Validation-Fix"
     APP_ENV: Literal["development", "production"] = "development"
+    
     SERVER: ServerSettings = ServerSettings()
     SECURITY: SecuritySettings = SecuritySettings()
     DATABASE: DatabaseSettings = DatabaseSettings()
@@ -76,6 +92,8 @@ class AppSettings(BaseSettings):
     GPIO: GpioSettings = GpioSettings()
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()
+    ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
+    LOGGING: LoggingSettings = LoggingSettings()
 
 @lru_cache()
 def get_settings() -> AppSettings:

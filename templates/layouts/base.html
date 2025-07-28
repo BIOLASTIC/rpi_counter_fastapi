@@ -17,6 +17,9 @@
                     <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="/status">System Status</a></li>
                     <li class="nav-item"><a class="nav-link" href="/hardware">Hardware Details</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/connections">Connections</a></li>
+                    <!-- FIX: Add new Gallery page link -->
+                    <li class="nav-item"><a class="nav-link" href="/gallery">Image Gallery</a></li>
                     <li class="nav-item"><a class="nav-link" href="/logs">Event Logs</a></li>
                     <li class="nav-item"><a class="nav-link" href="/api-docs">API Docs</a></li>
                 </ul>
@@ -33,6 +36,7 @@
     <main class="container mt-4">
         {% block content %}{% endblock %}
     </main>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 # Import all necessary components
 from main import create_app
+from config import settings # FIX: Import the application settings
 from app.models.database import Base, get_async_session
 from app.core.gpio_controller import AsyncGPIOController
 from app.services.detection_service import AsyncDetectionService
@@ -51,16 +52,20 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
 
 # --- DEFINITIVE FIX: Service Fixture ---
 @pytest_asyncio.fixture(scope="function")
-async def detection_service() -> AsyncDetectionService:
+async def detection_service(db_session: AsyncSession) -> AsyncDetectionService:
     """
     Provides a fully initialized instance of the AsyncDetectionService
     connected to the clean test database.
     """
     gpio_controller = await AsyncGPIOController.get_instance()
+    
+    # FIX: The required 'sensor_config' argument is now provided.
     service = AsyncDetectionService(
         gpio_controller=gpio_controller,
-        db_session_factory=TestAsyncSessionFactory
+        db_session_factory=TestAsyncSessionFactory,
+        sensor_config=settings.SENSORS 
     )
+    
     # Initialize the service, which will load its state from the (empty) DB.
     await service.initialize()
     return service

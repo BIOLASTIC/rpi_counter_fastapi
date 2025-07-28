@@ -1,7 +1,8 @@
 """
-FINAL REVISION: Restores the missing `health_check` method to the
-AsyncGPIOController. This resolves the final AttributeError in the
-background broadcast loop.
+FINAL REVISION: The attribute names used to access GPIO pin numbers have
+been updated to match the corrected GpioSettings class
+(e.g., self._config.PIN_CONVEYOR_RELAY). This resolves the
+AttributeError on startup.
 """
 import asyncio
 from enum import Enum
@@ -50,11 +51,12 @@ class AsyncGPIOController:
         if self.initialized: return True
         if not Device.pin_factory: return False
         try:
-            self._pins["conveyor"] = DigitalOutputDevice(self._config.CONVEYOR_RELAY, active_high=False)
-            self._pins["gate"] = DigitalOutputDevice(self._config.GATE_RELAY, active_high=False)
-            self._pins["led_green"] = LED(self._config.STATUS_LED_GREEN)
-            self._pins["led_red"] = LED(self._config.STATUS_LED_RED)
-            self._pins["buzzer"] = Buzzer(self._config.BUZZER)
+            # --- DEFINITIVE FIX: Use the correct attribute names from the settings file ---
+            self._pins["conveyor"] = DigitalOutputDevice(self._config.PIN_CONVEYOR_RELAY, active_high=False)
+            self._pins["gate"] = DigitalOutputDevice(self._config.PIN_GATE_RELAY, active_high=False)
+            self._pins["led_green"] = LED(self._config.PIN_STATUS_LED_GREEN)
+            self._pins["led_red"] = LED(self._config.PIN_STATUS_LED_RED)
+            self._pins["buzzer"] = Buzzer(self._config.PIN_BUZZER)
             self.initialized = True
             return True
         except GPIOZeroError:
@@ -85,7 +87,24 @@ class AsyncGPIOController:
             return await self.get_pin_status(name)
         return None
 
-    # --- DEFINITIVE FIX: Restore the missing health_check method ---
+    async def set_pin_state(self, name: str, state: bool) -> Optional[bool]:
+        """Sets the state of a pin (True=ON, False=OFF)."""
+        if name in self._pins:
+            action = self._pins[name].on if state else self._pins[name].off
+            await asyncio.to_thread(action)
+            return await self.get_pin_status(name)
+        return None
+
     async def health_check(self) -> GPIOHealthStatus:
-        """Returns the current health status of the GPIO subsystem."""
+        if not Device.pin_factory or not self.initialized:
+            self.health_status = GPIOHealthStatus.ERROR
+            return self.health_status
+
+        try:
+            await asyncio.to_thread(getattr, self._pins["led_green"], 'is_active')
+            self.health_status = GPIOHealthStatus.OK
+        except (GPIOZeroError, AttributeError, KeyError) as e:
+            print(f"GPIO health check failed: {e}")
+            self.health_status = GPIOHealthStatus.ERROR
+        
         return self.health_status

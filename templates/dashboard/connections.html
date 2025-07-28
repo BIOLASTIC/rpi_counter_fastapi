@@ -1,0 +1,135 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<style>
+    .connections-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem 0;
+        font-family: monospace;
+    }
+    .rpi-box {
+        width: 200px;
+        height: 300px;
+        border: 3px solid #555;
+        background-color: #c7c7c7;
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin: 0 4rem;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    }
+    .rpi-box .logo {
+        width: 80px;
+        height: auto;
+    }
+    .rpi-box-label {
+        font-weight: bold;
+        color: #333;
+        margin-top: 10px;
+    }
+    .connection-group {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    .device-card {
+        padding: 0.8rem 1.2rem;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        border-radius: 8px;
+        min-width: 250px;
+        position: relative;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
+    .device-card::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        height: 2px;
+        background-color: #999;
+        width: 4rem; /* Length of the line */
+    }
+    /* Position lines based on which side the card is on */
+    .connection-group.left .device-card::after {
+        right: -4rem;
+    }
+    .connection-group.right .device-card::after {
+        left: -4rem;
+    }
+    .device-title {
+        font-weight: bold;
+        margin-bottom: 0.25rem;
+    }
+    .device-details {
+        font-size: 0.8em;
+        color: #666;
+    }
+    .device-status {
+        margin-top: 0.5rem;
+    }
+</style>
+
+<div class="container">
+    <h1 class="mb-4">Live Hardware Connections</h1>
+
+    <div class="connections-container">
+        <!-- Left Side Devices (GPIO) -->
+        <div class="connection-group left">
+            <div class="device-card" id="device-conveyor">
+                <div class="device-title">Conveyor Relay</div>
+                <div class="device-details">BCM Pin: {{ config.GPIO.CONVEYOR_RELAY }}</div>
+                <div class="device-status">Status: <span class="badge" id="conn-conveyor">--</span></div>
+            </div>
+            <div class="device-card" id="device-gate">
+                <div class="device-title">Gate Relay</div>
+                <div class="device-details">BCM Pin: {{ config.GPIO.GATE_RELAY }}</div>
+                <div class="device-status">Status: <span class="badge" id="conn-gate">--</span></div>
+            </div>
+             <div class="device-card" id="device-buzzer">
+                <div class="device-title">Buzzer</div>
+                <div class="device-details">BCM Pin: {{ config.GPIO.BUZZER }}</div>
+                <div class="device-status">Status: <span class="badge" id="conn-buzzer">--</span></div>
+            </div>
+        </div>
+
+        <!-- Raspberry Pi Box -->
+        <div class="rpi-box">
+            <img src="https://www.raspberrypi.com/img/raspberry-pi-logo.svg" alt="Pi Logo" class="logo">
+            <div class="rpi-box-label">Raspberry Pi 5</div>
+        </div>
+
+        <!-- Right Side Devices (GPIO, USB, CSI) -->
+        <div class="connection-group right">
+            <div class="device-card" id="device-led-green">
+                <div class="device-title">Status LED (Green)</div>
+                <div class="device-details">BCM Pin: {{ config.GPIO.STATUS_LED_GREEN }}</div>
+                <div class="device-status">Status: <span class="badge" id="conn-led-green">--</span></div>
+            </div>
+            <div class="device-card" id="device-led-red">
+                <div class="device-title">Status LED (Red)</div>
+                <div class="device-details">BCM Pin: {{ config.GPIO.STATUS_LED_RED }}</div>
+                <div class="device-status">Status: <span class="badge" id="conn-led-red">--</span></div>
+            </div>
+            <div class="device-card" id="device-io-module">
+                <div class="device-title">Modbus IO Module</div>
+                <div class="device-details">Port: {{ config.MODBUS.PORT }} (via USB)</div>
+                <div class="device-status">Status: <span class="badge" id="conn-io-module">--</span></div>
+            </div>
+            <div class="device-card" id="device-camera">
+                <div class="device-title">Camera Module</div>
+                <div class="device-details">Port: CSI</div>
+                <div class="device-status">Status: <span class="badge" id="conn-camera">--</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+<!-- FIX: Add cache-busting query string -->
+{% block scripts %}
+<script src="/static/js/connections.js?v=1.1"></script>
+{% endblock %}

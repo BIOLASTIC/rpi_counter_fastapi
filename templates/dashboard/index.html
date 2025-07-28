@@ -2,47 +2,45 @@
 
 {% block content %}
 <div class="row">
-    <!-- Box Counter Card -->
-    <div class="col-xl-4 col-md-6 mb-4">
-        <div class="card h-100">
-            <div class="card-body text-center">
-                <h5 class="card-title">Box Count</h5>
-                <p class="display-1 fw-bold" id="box-count">0</p>
-                <p class="text-muted" id="detection-state">IDLE</p>
-                <button class="btn btn-danger" id="reset-button">Reset Counter</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- System Status Card -->
-    <div class="col-xl-4 col-md-6 mb-4">
-        <div class="card h-100">
+    <!-- Left Column: Controls -->
+    <div class="col-lg-4 mb-4">
+        <!-- Batch Control Card -->
+        <div class="card mb-4">
+            <div class="card-header fw-bold"><i class="bi bi-stack"></i> Batch Control</div>
             <div class="card-body">
-                <h5 class="card-title">System Status</h5>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex justify-content-between">CPU Usage <span class="badge bg-secondary" id="cpu-usage">--%</span></li>
-                    <li class="list-group-item d-flex justify-content-between">Memory Usage <span class="badge bg-secondary" id="mem-usage">--%</span></li>
-                    <li class="list-group-item d-flex justify-content-between">CPU Temp <span class="badge bg-secondary" id="cpu-temp">--°C</span></li>
-                    <li class="list-group-item d-flex justify-content-between">Camera <span class="badge bg-danger" id="camera-status">DISCONNECTED</span></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <!-- Hardware Control Card -->
-    <div class="col-xl-4 col-md-12 mb-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5 class="card-title">Hardware Control</h5>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-success" id="conveyor-start-btn">Start Conveyor</button>
-                    <button class="btn btn-warning" id="conveyor-stop-btn">Stop Conveyor</button>
-                    <hr>
-                    <button class="btn btn-outline-danger" id="emergency-stop-btn">Emergency Stop</button>
+                <div class="mb-3">
+                    <label for="batch-size-input" class="form-label">Batch Size</label>
+                    <input type="number" class="form-control" id="batch-size-input" value="10" min="1">
                 </div>
-                 <div class="mt-3 text-center">Conveyor: <span class="badge bg-secondary" id="conveyor-status">STOPPED</span></div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" id="start-batch-btn">Start Batch</button>
+                    <button class="btn btn-danger" id="stop-batch-btn">Stop Process</button>
+                </div>
+                <hr>
+                <div class="text-center">
+                    <div>Mode: <span class="badge bg-secondary" id="system-mode">STOPPED</span></div>
+                    <div class="mt-2 fs-5">Progress: <span id="batch-progress">0</span> / <span id="batch-target">0</span></div>
+                </div>
             </div>
         </div>
+
+        <!-- Box Counter Card -->
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <h5 class="card-title">Total Box Count (All Time)</h5>
+                <p class="display-4 fw-bold" id="total-box-count">0</p>
+                <button class="btn btn-outline-danger btn-sm" id="reset-total-button">Reset Total</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Visuals -->
+    <div class="col-lg-8 mb-4">
+        <!-- Event Capture & Surveillance Cards... (unchanged) -->
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard.js?v=2.0"></script>
 {% endblock %}
