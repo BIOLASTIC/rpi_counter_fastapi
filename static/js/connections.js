@@ -1,31 +1,35 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    let socket;
 
-    // --- Element Cache ---
-    const elements = {
+    const statusElements = {
         conveyor: document.getElementById('conn-conveyor'),
         gate: document.getElementById('conn-gate'),
         buzzer: document.getElementById('conn-buzzer'),
         ledGreen: document.getElementById('conn-led-green'),
         ledRed: document.getElementById('conn-led-red'),
         ioModule: document.getElementById('conn-io-module'),
-        camera: document.getElementById('conn-camera'),
+        camera: document.getElementById('conn-camera')
     };
 
-    // --- WebSocket Handler ---
-    function connectWebSocket() {
-        const socket = new WebSocket(`ws://${window.location.host}/ws`);
+    function connect() {
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function() {
+            console.log('WebSocket connection established for connections page.');
+        };
 
         socket.onmessage = function(event) {
             const message = JSON.parse(event.data);
             if (message.type === 'system_status') {
-                updateConnectionStatus(message.data);
+                updateHardwareStatus(message.data);
             }
         };
 
-        socket.onclose = function() {
-            console.log('WebSocket disconnected. Reconnecting in 3 seconds...');
-            setAllToUnknown();
-            setTimeout(connectWebSocket, 3000);
+        socket.onclose = function(e) {
+            console.log('WebSocket connection closed. Reconnecting in 2 seconds...', e.reason);
+            setTimeout(connect, 2000);
         };
 
         socket.onerror = function(err) {
@@ -34,60 +38,57 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // --- UI Update Functions ---
-    function updateConnectionStatus(data) {
-        // GPIO Pins
-        updatePinStatus(elements.conveyor, data.conveyor_relay_status);
-        updatePinStatus(elements.gate, data.gate_relay_status);
-        updatePinStatus(elements.buzzer, data.buzzer_status);
-        updatePinStatus(elements.ledGreen, data.led_green_status);
-        updatePinStatus(elements.ledRed, data.led_red_status);
+    function updateBadge(element, text, isOk, onText = 'ON', offText = 'OFF') {
+        if (!element) return;
         
-        // Other Modules
-        updateModuleStatus(elements.ioModule, data.io_module_status);
-        updateModuleStatus(elements.camera, data.camera_status);
-    }
-    
-    function updatePinStatus(element, is_on) {
-        if (!element) return;
-        element.textContent = is_on ? 'ON' : 'OFF';
-        updateBadgeClass(element, is_on, { true: 'bg-success', false: 'bg-secondary' });
-    }
-    
-    function updateModuleStatus(element, status) {
-        if (!element) return;
-        status = status || 'unknown';
-        element.textContent = status.toUpperCase();
-        const classMap = {
-            'connected': 'bg-success',
-            'ok': 'bg-success',
-            'disconnected': 'bg-warning',
-            'error': 'bg-danger',
-            'unknown': 'bg-dark',
-        };
-        updateBadgeClass(element, status, classMap);
+        let statusText = isOk ? onText : offText;
+        let addClass = isOk ? 'bg-success' : 'bg-danger';
+        let removeClass = isOk ? 'bg-danger' : 'bg-success';
+
+        if (text) {
+             statusText = text;
+        }
+
+        element.textContent = statusText;
+        element.classList.add(addClass);
+        element.classList.remove(removeClass, 'bg-warning', 'bg-secondary');
     }
 
-    function updateBadgeClass(element, value, classMap) {
-        // Remove all possible classes first
-        Object.values(classMap).forEach(cls => element.classList.remove(cls));
-        // Add the correct class based on the current value
-        if (classMap[value] !== undefined) {
-            element.classList.add(classMap[value]);
-        } else {
-            element.classList.add('bg-dark'); // Default for unexpected values
+    function updateConnectionBadge(element, status) {
+        if (!element) return;
+        
+        element.textContent = status.toUpperCase();
+        element.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'bg-secondary');
+
+        switch (status.toLowerCase()) {
+            case 'connected':
+            case 'ok':
+                element.classList.add('bg-success');
+                break;
+            case 'disconnected':
+                element.classList.add('bg-warning', 'text-dark');
+                break;
+            case 'error':
+                element.classList.add('bg-danger');
+                break;
+            default:
+                element.classList.add('bg-secondary');
         }
     }
-    
-    function setAllToUnknown() {
-        Object.values(elements).forEach(el => {
-            if (el) {
-                el.textContent = 'UNKNOWN';
-                updateBadgeClass(el, 'unknown', {});
-            }
-        });
+
+
+    function updateHardwareStatus(data) {
+        // Relays and discrete outputs
+        updateBadge(statusElements.conveyor, null, data.conveyor_relay_status);
+        updateBadge(statusElements.gate, null, data.gate_relay_status);
+        updateBadge(statusElements.buzzer, null, data.buzzer_status);
+        updateBadge(statusElements.ledGreen, null, data.led_green_status);
+        updateBadge(statusElements.ledRed, null, data.led_red_status);
+
+        // Module statuses
+        updateConnectionBadge(statusElements.ioModule, data.io_module_status);
+        updateConnectionBadge(statusElements.camera, data.camera_status);
     }
 
-    // --- Initial Kick-off ---
-    connectWebSocket();
+    connect();
 });

@@ -36,11 +36,20 @@
 
     <!-- Right Column: Visuals -->
     <div class="col-lg-8 mb-4">
-        <!-- Event Capture & Surveillance Cards... (unchanged) -->
+        <!-- Event Capture -->
+        <div class="card">
+             <div class="card-header fw-bold"><i class="bi bi-camera-video-fill"></i> Last Event Capture (RPI)</div>
+             <div class="card-body p-2">
+                 <a id="event-capture-link" href="#" target="_blank">
+                     <img id="event-capture-image" src="/static/images/placeholder.jpg" class="img-fluid rounded" alt="Last event capture">
+                 </a>
+             </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
+<!-- ADD THIS SCRIPT BLOCK -->
 {% block scripts %}
-<script src="/static/js/dashboard.js?v=2.0"></script>
+<script src="/static/js/dashboard.js"></script>
 {% endblock %}

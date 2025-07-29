@@ -1,8 +1,8 @@
 """
-Routes for serving the HTML web dashboard and new pages.
-
-DEFINITIVE FIX: Add the missing route for the /gallery page to resolve
-the 404 Not Found error.
+REVISED: The import for camera configuration has been fixed.
+It no longer imports from the deleted `camera_config.py`. Instead, it imports
+`ACTIVE_CAMERA_IDS` from the main application's centralized config module.
+The logic has been updated to check for camera IDs in the list.
 """
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -12,9 +12,11 @@ from sqlalchemy.future import select
 from app.models import get_async_session, EventLog
 from config import settings
 
+# --- THE FIX: Import from the main config module, not camera_config ---
+from config import ACTIVE_CAMERA_IDS
+
 router = APIRouter(tags=["Web Dashboard"])
 
-# --- Helper to create a response with no-cache headers ---
 def NoCacheTemplateResponse(request: Request, name: str, context: dict):
     templates = request.app.state.templates
     headers = {
@@ -23,7 +25,6 @@ def NoCacheTemplateResponse(request: Request, name: str, context: dict):
         "Expires": "0"
     }
     return templates.TemplateResponse(name, context, headers=headers)
-
 
 @router.get("/", response_class=HTMLResponse)
 async def read_dashboard(request: Request):
@@ -41,11 +42,27 @@ async def read_hardware_page(request: Request):
 async def read_connections_page(request: Request):
     return NoCacheTemplateResponse(request, "dashboard/connections.html", {"request": request, "config": settings})
 
-# --- DEFINITIVE FIX: The missing gallery route is now added ---
-@router.get("/gallery", response_class=HTMLResponse)
-async def read_gallery_page(request: Request):
-    """Serves the new image gallery page."""
-    return NoCacheTemplateResponse(request, "dashboard/gallery.html", {"request": request})
+# --- Conditionally add routes based on config ---
+# --- THE FIX: Logic now checks if 'rpi' or 'usb' are in the list ---
+if 'rpi' in ACTIVE_CAMERA_IDS:
+    @router.get("/live-view/rpi", response_class=HTMLResponse)
+    async def read_live_view_rpi(request: Request):
+        # Renamed the template to be more specific
+        return NoCacheTemplateResponse(request, "dashboard/live_view_rpi.html", {"request": request})
+
+    @router.get("/gallery/rpi", response_class=HTMLResponse)
+    async def read_gallery_rpi(request: Request):
+        # Renamed the template to be more specific
+        return NoCacheTemplateResponse(request, "dashboard/gallery_rpi.html", {"request": request})
+
+if 'usb' in ACTIVE_CAMERA_IDS:
+    @router.get("/live-view/usb", response_class=HTMLResponse)
+    async def read_live_view_usb(request: Request):
+        return NoCacheTemplateResponse(request, "dashboard/live_view_usb.html", {"request": request})
+
+    @router.get("/gallery/usb", response_class=HTMLResponse)
+    async def read_gallery_usb(request: Request):
+        return NoCacheTemplateResponse(request, "dashboard/gallery_usb.html", {"request": request})
 
 @router.get("/logs", response_class=HTMLResponse)
 async def read_logs_page(request: Request, session: AsyncSession = Depends(get_async_session)):

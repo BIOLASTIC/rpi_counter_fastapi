@@ -64,6 +64,7 @@ coverage.xml
 !.env.example
 
 # Data, Logs, and Databases
+static/captures/
 data/
 logs/
 *.log

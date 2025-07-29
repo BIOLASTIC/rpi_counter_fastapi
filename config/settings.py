@@ -1,16 +1,13 @@
 """
-FINAL REVISION: The entire configuration has been refactored to the
-correct architectural pattern. Each settings class now inherits from
-BaseSettings and uses its own `env_prefix` to load variables
-(e.g., SERVER_HOST, GPIO_PIN_CONVEYOR_RELAY). This matches the standard
-.env file format and permanently resolves all ValidationErrors on startup.
+REVISED: Added the missing `CAMERA_MODE` field back to the AppSettings class.
+This resolves the AttributeError on startup.
 """
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# --- Each class is now a self-contained settings loader ---
+# --- Nested Settings Classes (No changes here) ---
 
 class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SERVER_', case_sensitive=False)
@@ -27,15 +24,22 @@ class DatabaseSettings(BaseSettings):
     URL: str = "sqlite+aiosqlite:///./data/box_counter.db"
     ECHO: bool = False
 
-class CameraSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='CAMERA_', case_sensitive=False)
-    RESOLUTION_WIDTH: int = 640
-    RESOLUTION_HEIGHT: int = 480
-    JPEG_QUALITY: int = Field(85, ge=10, le=100)
-    TRIGGER_DELAY_MS: int = 100
-    SURVEILLANCE_INTERVAL_SEC: int = 10
-    CAPTURES_DIR: str = "static/captures"
-    FPS: int = 15
+class BaseCameraSettings(BaseSettings):
+    RESOLUTION_WIDTH: int = 1280
+    RESOLUTION_HEIGHT: int = 720
+    FPS: int = 30
+    JPEG_QUALITY: int = Field(90, ge=10, le=100)
+
+class RpiCameraSettings(BaseCameraSettings):
+    model_config = SettingsConfigDict(env_prefix='CAMERA_RPI_', case_sensitive=False)
+    ID: str = ""
+    SHUTTER_SPEED: int = Field(0, ge=0)
+    ISO: int = Field(0, ge=0)
+    MANUAL_FOCUS: float = Field(0.0, ge=0.0)
+
+class UsbCameraSettings(BaseCameraSettings):
+    model_config = SettingsConfigDict(env_prefix='CAMERA_USB_', case_sensitive=False)
+    DEVICE_INDEX: int = 0
 
 class GpioSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='GPIO_', case_sensitive=False)
@@ -66,20 +70,30 @@ class LoggingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='LOGGING_', case_sensitive=False)
     VERBOSE_LOGGING: bool = False
 
-# --- This class is now a simple container for the other loaders ---
+# --- Main AppSettings Container ---
+
 class AppSettings(BaseSettings):
-    # This loads top-level variables and tells all nested BaseSettings
-    # classes to load from the .env file.
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
-    
+
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "4.0.0-Final-Config"
+    PROJECT_VERSION: str = "4.4.0-Final-Config"
     APP_ENV: Literal["development", "production"] = "development"
-    
+
+    # --- THE FIX IS HERE ---
+    # This field was missing, causing the AttributeError.
+    # It reads the CAMERA_MODE variable from the top level of the .env file.
+    CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
+
+    # General app settings that are not nested
+    CAMERA_TRIGGER_DELAY_MS: int = 100
+    CAMERA_CAPTURES_DIR: str = "static/captures"
+
+    # Nested configuration objects
+    CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()
+    CAMERA_USB: UsbCameraSettings = UsbCameraSettings()
     SERVER: ServerSettings = ServerSettings()
     SECURITY: SecuritySettings = SecuritySettings()
     DATABASE: DatabaseSettings = DatabaseSettings()
-    CAMERA: CameraSettings = CameraSettings()
     GPIO: GpioSettings = GpioSettings()
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()

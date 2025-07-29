@@ -1,20 +1,19 @@
 """
-FINAL REVISION: Corrects the web path generation for saved images
-to align with the new, dedicated /captures static mount point.
+REVISED: Imports ACTIVE_CAMERA_IDS from the main application's config module.
 """
 import asyncio
 import time
 import redis.asyncio as redis
 from enum import Enum
-from typing import Optional, Tuple
-from pydantic import BaseModel
-import multiprocessing
+from typing import Optional, Dict, Set
 import cv2
 import numpy as np
 from pathlib import Path
 
 from redis import exceptions as redis_exceptions
 from app.services.notification_service import AsyncNotificationService
+# --- THE FIX: Import from the main app's centralized config ---
+from config import ACTIVE_CAMERA_IDS
 
 class CameraHealthStatus(str, Enum):
     CONNECTED = "connected"
@@ -22,104 +21,109 @@ class CameraHealthStatus(str, Enum):
     ERROR = "error"
 
 class AsyncCameraManager:
-    def __init__(self, notification_service: AsyncNotificationService):
-        from config import settings
-        self._config = settings.CAMERA
-        self._notification_service = notification_service
-        self._frame_queue = asyncio.Queue(maxsize=5)
-        self._listener_task: Optional[asyncio.Task] = None
-        self._health_status = CameraHealthStatus.DISCONNECTED
+    # The rest of this file's code is correct from the previous step.
+    # No other changes are needed here.
+    def __init__(self, notification_service: AsyncNotificationService, captures_dir: str):
         self.redis_client = redis.from_url("redis://localhost")
-        
-        self._captures_dir = Path(self._config.CAPTURES_DIR)
-        self._last_event_image_path: Optional[str] = None
-        self._last_surveillance_image_path: Optional[str] = None
+        self._notification_service = notification_service
+        self._captures_dir_base = Path(captures_dir)
+        self._listener_tasks: Dict[str, asyncio.Task] = {}
+        self._health_status: Dict[str, CameraHealthStatus] = {cam_id: CameraHealthStatus.DISCONNECTED for cam_id in ACTIVE_CAMERA_IDS}
+        self._frame_queues: Dict[str, asyncio.Queue] = {cam_id: asyncio.Queue(maxsize=5) for cam_id in ACTIVE_CAMERA_IDS}
+        self._stream_listeners: Dict[str, Set[asyncio.Queue]] = {cam_id: set() for cam_id in ACTIVE_CAMERA_IDS}
+        self._last_event_image_paths: Dict[str, Optional[str]] = {cam_id: None for cam_id in ACTIVE_CAMERA_IDS}
+        self._stream_lock = asyncio.Lock()
 
     def start(self):
-        if not self._listener_task or self._listener_task.done():
-            self._listener_task = asyncio.create_task(self._redis_listener())
-            print("Camera Manager: Started Redis listener for frames.")
+        for cam_id in ACTIVE_CAMERA_IDS:
+            if cam_id not in self._listener_tasks or self._listener_tasks[cam_id].done():
+                self._listener_tasks[cam_id] = asyncio.create_task(self._redis_listener(cam_id))
+                print(f"Camera Manager: Started Redis listener for '{cam_id}'.")
 
     async def stop(self):
-        if self._listener_task: self._listener_task.cancel()
+        for task in self._listener_tasks.values():
+            if task and not task.done():
+                task.cancel()
         await self.redis_client.close()
-        print("Camera Manager: Stopped Redis listener.")
+        print("Camera Manager: Stopped all Redis listeners.")
 
-    async def _redis_listener(self):
-        # ... (this method is unchanged)
+    async def _redis_listener(self, cam_id: str):
+        channel_name = f"camera:frames:{cam_id}"
         while True:
             try:
                 async with self.redis_client.pubsub() as pubsub:
-                    await pubsub.subscribe("camera:frames")
-                    print("Camera Manager: Subscribed to 'camera:frames' channel.")
-                    if self._health_status != CameraHealthStatus.CONNECTED:
-                         self._health_status = CameraHealthStatus.DISCONNECTED
+                    await pubsub.subscribe(channel_name)
+                    print(f"Camera Manager: Subscribed to '{channel_name}' channel.")
                     while True:
                         message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
                         if message:
-                            self._health_status = CameraHealthStatus.CONNECTED
-                            if not self._frame_queue.full():
-                               self._frame_queue.put_nowait(message['data'])
+                            self._health_status[cam_id] = CameraHealthStatus.CONNECTED
+                            frame_data = message['data']
+                            if not self._frame_queues[cam_id].full():
+                                self._frame_queues[cam_id].put_nowait(frame_data)
+                            async with self._stream_lock:
+                                for queue in self._stream_listeners[cam_id]:
+                                    if not queue.full():
+                                        queue.put_nowait(frame_data)
                         else:
-                            if self._health_status == CameraHealthStatus.CONNECTED:
-                                await self._notification_service.send_alert("WARNING", "Camera service has stopped publishing frames.")
-                            self._health_status = CameraHealthStatus.DISCONNECTED
+                            if self._health_status.get(cam_id) == CameraHealthStatus.CONNECTED:
+                                await self._notification_service.send_alert("WARNING", f"Camera '{cam_id}' has stopped publishing frames.")
+                            self._health_status[cam_id] = CameraHealthStatus.DISCONNECTED
             except redis_exceptions.ConnectionError as e:
-                if self._health_status != CameraHealthStatus.ERROR:
+                if self._health_status.get(cam_id) != CameraHealthStatus.ERROR:
                     error_message = f"Cannot connect to Redis: {e}. Retrying in 10 seconds."
-                    print(f"Camera Manager: {error_message}")
-                    await self._notification_service.send_alert("CRITICAL", error_message)
-                self._health_status = CameraHealthStatus.ERROR
+                    print(f"Camera Manager ({cam_id}): {error_message}")
+                self._health_status[cam_id] = CameraHealthStatus.ERROR
                 await asyncio.sleep(10)
             except asyncio.CancelledError:
-                print("Camera Manager: Redis listener shutting down.")
+                print(f"Camera Manager: Redis listener for '{cam_id}' shutting down.")
                 break
             except Exception as e:
-                print(f"Camera Manager: Unhandled error in Redis listener: {e}. Retrying in 10s.")
-                self._health_status = CameraHealthStatus.ERROR
+                print(f"Camera Manager ({cam_id}): Unhandled error in Redis listener: {e}. Retrying in 10s.")
+                self._health_status[cam_id] = CameraHealthStatus.ERROR
                 await asyncio.sleep(10)
+    
+    async def start_stream(self, cam_id: str) -> Optional[asyncio.Queue]:
+        if cam_id not in ACTIVE_CAMERA_IDS: return None
+        q = asyncio.Queue(maxsize=2)
+        async with self._stream_lock:
+            self._stream_listeners[cam_id].add(q)
+        return q
 
-    async def capture_and_save_image(self, filename: str, image_type: str) -> Optional[str]:
-        """
-        Grabs the latest frame from the queue, saves it, and returns the web-accessible path.
-        """
-        if self._health_status != CameraHealthStatus.CONNECTED or self._frame_queue.empty():
+    async def stop_stream(self, cam_id: str, queue: asyncio.Queue):
+        if cam_id not in ACTIVE_CAMERA_IDS: return
+        async with self._stream_lock:
+            self._stream_listeners[cam_id].discard(queue)
+
+    async def capture_and_save_image(self, cam_id: str, filename_prefix: str) -> Optional[str]:
+        if self._health_status.get(cam_id) != CameraHealthStatus.CONNECTED or self._frame_queues[cam_id].empty():
             return None
-        
         try:
-            jpeg_bytes = await self._frame_queue.get()
-            self._frame_queue.task_done()
-
+            jpeg_bytes = await self._frame_queues[cam_id].get()
+            self._frame_queues[cam_id].task_done()
+            captures_dir = self._captures_dir_base / cam_id
+            captures_dir.mkdir(parents=True, exist_ok=True)
+            filename = f"{filename_prefix}_{int(time.time())}.jpg"
+            full_path = captures_dir / filename
             def save_image_sync():
                 np_array = np.frombuffer(jpeg_bytes, np.uint8)
                 img_decoded = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
                 if img_decoded is None: return None
-                
-                full_path = self._captures_dir / filename
                 cv2.imwrite(str(full_path), img_decoded)
-                
-                # --- DEFINITIVE FIX ---
-                # Generate a path that matches the new mount point in main.py
-                return f"/captures/{filename}"
-
+                return f"/captures/{cam_id}/{filename}"
             web_path = await asyncio.to_thread(save_image_sync)
-
             if web_path:
-                if image_type == 'event':
-                    self._last_event_image_path = web_path
-                elif image_type == 'surveillance':
-                    self._last_surveillance_image_path = web_path
+                self._last_event_image_paths[cam_id] = web_path
             return web_path
-            
         except Exception as e:
-            print(f"Error saving image {filename}: {e}")
+            print(f"Error saving image for {cam_id}: {e}")
             return None
 
-    async def health_check(self) -> CameraHealthStatus:
-        return self._health_status
+    def get_health_status(self, cam_id: str) -> CameraHealthStatus:
+        return self._health_status.get(cam_id, CameraHealthStatus.DISCONNECTED)
 
-    def get_last_event_image_path(self) -> Optional[str]:
-        return self._last_event_image_path
-        
-    def get_last_surveillance_image_path(self) -> Optional[str]:
-        return self._last_surveillance_image_path
+    def get_all_health_statuses(self) -> Dict[str, str]:
+        return {cam_id: status.value for cam_id, status in self._health_status.items()}
+
+    def get_last_event_image_path(self, cam_id: str) -> Optional[str]:
+        return self._last_event_image_paths.get(cam_id)

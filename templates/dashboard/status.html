@@ -39,14 +39,13 @@
                 <div class="card-header"><i class="bi bi-motherboard-fill"></i> Hardware Modules</div>
                 <ul class="list-group list-group-flush">
                     <li class="list-group-item d-flex justify-content-between align-items-center">
-                        Camera Module
+                        Camera Module (RPI)
                         <span class="badge" id="status-camera">--</span>
                     </li>
                     <li class="list-group-item d-flex justify-content-between align-items-center">
                         GPIO Controller
                         <span class="badge" id="status-gpio">--</span>
                     </li>
-                    <!-- FIX APPLIED HERE: Add new rows for IO board, sensors, and relays -->
                     <li class="list-group-item d-flex justify-content-between align-items-center">
                         Modbus IO Module
                         <span class="badge" id="status-io-module">--</span>
@@ -74,7 +73,7 @@
 </div>
 {% endblock %}
 
-<!-- FIX: Add cache-busting query string -->
+<!-- ADD THIS SCRIPT BLOCK -->
 {% block scripts %}
-<script src="/static/js/status.js?v=1.1"></script>
+<script src="/static/js/status.js"></script>
 {% endblock %}

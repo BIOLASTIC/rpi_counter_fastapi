@@ -2,57 +2,54 @@
 
 {% block content %}
 <div class="container">
-    <h1 class="mb-4">Hardware Connections & Live Status</h1>
+    <h1 class="mb-4">Hardware GPIO Control</h1>
     
-    <!-- Manual GPIO Control Panel -->
     <div class="card mb-4">
-        <div class="card-header fs-5"><i class="bi bi-hand-index-thumb-fill"></i> Manual GPIO Control</div>
+        <div class="card-header fs-5"><i class="bi bi-hand-index-thumb-fill"></i> Manual GPIO Control Panel</div>
         <div class="card-body">
             <div class="row text-center">
                 <!-- Conveyor -->
                 <div class="col-lg col-md-4 col-6 mb-3">
                     <h6>Conveyor</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.CONVEYOR_RELAY }}</p>
+                    <p class="text-muted small">Pin {{ config.GPIO.PIN_CONVEYOR_RELAY }}</p>
                     <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="conveyor">Toggle</button>
                     <div class="mt-2">Status: <span class="badge" id="hw-conveyor-relay">--</span></div>
                 </div>
                 <!-- Gate -->
                 <div class="col-lg col-md-4 col-6 mb-3">
                     <h6>Gate</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.GATE_RELAY }}</p>
+                    <p class="text-muted small">Pin {{ config.GPIO.PIN_GATE_RELAY }}</p>
                     <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="gate">Toggle</button>
                     <div class="mt-2">Status: <span class="badge" id="hw-gate-relay">--</span></div>
                 </div>
                 <!-- Green LED -->
                 <div class="col-lg col-md-4 col-6 mb-3">
                     <h6>Green LED</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.STATUS_LED_GREEN }}</p>
+                    <p class="text-muted small">Pin {{ config.GPIO.PIN_STATUS_LED_GREEN }}</p>
                     <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="led_green">Toggle</button>
                     <div class="mt-2">Status: <span class="badge" id="hw-led-green">--</span></div>
                 </div>
                 <!-- Red LED -->
                 <div class="col-lg col-md-6 col-6 mb-3">
                     <h6>Red LED</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.STATUS_LED_RED }}</p>
+                    <p class="text-muted small">Pin {{ config.GPIO.PIN_STATUS_LED_RED }}</p>
                     <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="led_red">Toggle</button>
                     <div class="mt-2">Status: <span class="badge" id="hw-led-red">--</span></div>
                 </div>
                 <!-- Buzzer -->
                 <div class="col-lg col-md-6 col-12 mb-3">
                     <h6>Buzzer</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.BUZZER }}</p>
+                    <p class="text-muted small">Pin {{ config.GPIO.PIN_BUZZER }}</p>
                     <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="buzzer">Toggle</button>
                     <div class="mt-2">Status: <span class="badge" id="hw-buzzer">--</span></div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Other status cards... -->
 </div>
 {% endblock %}
 
-<!-- FIX: Add cache-busting query string -->
+<!-- ADD THIS SCRIPT BLOCK -->
 {% block scripts %}
-<script src="/static/js/hardware.js?v=1.1"></script>
+<script src="/static/js/hardware.js"></script>
 {% endblock %}
