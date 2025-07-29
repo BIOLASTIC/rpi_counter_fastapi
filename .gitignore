@@ -65,7 +65,7 @@ coverage.xml
 
 # Data, Logs, and Databases
 static/captures/
-web/static/captures
+#web/static/captures
 data/
 logs/
 *.log
