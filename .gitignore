@@ -67,6 +67,7 @@ coverage.xml
 static/captures/
 web/static/captures
 web/static/captures/rpi
+web/static/captures/usb
 data/
 logs/
 *.log
