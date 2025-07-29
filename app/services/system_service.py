@@ -1,7 +1,8 @@
 """
-REVISED: The get_system_status method now fetches the *corrected* sensor
-states from the handler, ensuring the UI display logic is always correct
-regardless of the sensor type (NO or NC).
+FINAL REVISION: The get_system_status method has been fixed.
+- It no longer calls the non-existent `_camera.health_check()` method.
+- It now correctly calls `_camera.get_all_health_statuses()` to get the status
+  for all active cameras, resolving the silent crash in the broadcast loop.
 """
 import asyncio
 import time
@@ -31,16 +32,17 @@ class AsyncSystemService:
 
     async def get_system_status(self) -> dict:
         """Gathers the current health status from all components."""
+        
+        # --- THE CRITICAL FIX IS HERE ---
+        # We get the camera statuses first, as it's a dictionary now.
+        camera_statuses = self._camera.get_all_health_statuses()
+
         (
-            gpio_health, camera_health, conveyor_status, gate_position,
-            conveyor_relay_status, gate_relay_status,
+            gpio_health, conveyor_relay_status, gate_relay_status,
             led_green_status, led_red_status, buzzer_status,
             cpu_usage, mem_info, disk_info, cpu_temp
         ) = await asyncio.gather(
             self._gpio.health_check(),
-            self._camera.health_check(),
-            self._gpio.get_conveyor_status(),
-            self._gpio.get_gate_position(),
             self._gpio.get_pin_status("conveyor"),
             self._gpio.get_pin_status("gate"),
             self._gpio.get_pin_status("led_green"),
@@ -52,7 +54,6 @@ class AsyncSystemService:
             asyncio.to_thread(_get_rpi_cpu_temp)
         )
         
-        # --- DEFINITIVE FIX: Get the CORRECTED states for UI display ---
         sensor_states = self._sensor_handler.get_last_known_corrected_states()
         io_module_status = self._sensor_handler.get_module_health()
         uptime_seconds = int(time.monotonic() - self._app_start_time)
@@ -63,7 +64,7 @@ class AsyncSystemService:
             "disk_usage": disk_info.percent,
             "cpu_temperature": cpu_temp,
             "uptime_seconds": uptime_seconds,
-            "camera_status": camera_health.value,
+            "camera_statuses": camera_statuses, # Return the dictionary of all statuses
             "gpio_status": gpio_health.value,
             "conveyor_relay_status": conveyor_relay_status,
             "gate_relay_status": gate_relay_status,

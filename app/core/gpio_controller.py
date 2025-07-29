@@ -1,28 +1,21 @@
 """
-FINAL REVISION: The attribute names used to access GPIO pin numbers have
-been updated to match the corrected GpioSettings class
-(e.g., self._config.PIN_CONVEYOR_RELAY). This resolves the
-AttributeError on startup.
+FINAL REVISION: A non-blocking `blink_led` method has been implemented to fix the
+AttributeError in the notification service. It correctly manages background
+blinking tasks using asyncio.
 """
 import asyncio
 from enum import Enum
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any
+
 from gpiozero import DigitalOutputDevice, LED, Buzzer, GPIOZeroError, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 
 try:
     factory = LGPIOFactory()
-    factory.close = lambda: None
     Device.pin_factory = factory
 except Exception:
     Device.pin_factory = None
 
-class ConveyorStatus(str, Enum):
-    RUNNING = "running"
-    STOPPED = "stopped"
-class GatePosition(str, Enum):
-    OPEN = "open"
-    CLOSED = "closed"
 class GPIOHealthStatus(str, Enum):
     OK = "ok"
     ERROR = "error"
@@ -38,6 +31,8 @@ class AsyncGPIOController:
             self._pins: Dict[str, Any] = {}
             self.initialized = False
             self.health_status = GPIOHealthStatus.OK if Device.pin_factory else GPIOHealthStatus.ERROR
+            # Task manager for blinking LEDs
+            self._blink_tasks: Dict[str, asyncio.Task] = {}
 
     @classmethod
     async def get_instance(cls) -> 'AsyncGPIOController':
@@ -51,7 +46,6 @@ class AsyncGPIOController:
         if self.initialized: return True
         if not Device.pin_factory: return False
         try:
-            # --- DEFINITIVE FIX: Use the correct attribute names from the settings file ---
             self._pins["conveyor"] = DigitalOutputDevice(self._config.PIN_CONVEYOR_RELAY, active_high=False)
             self._pins["gate"] = DigitalOutputDevice(self._config.PIN_GATE_RELAY, active_high=False)
             self._pins["led_green"] = LED(self._config.PIN_STATUS_LED_GREEN)
@@ -59,52 +53,81 @@ class AsyncGPIOController:
             self._pins["buzzer"] = Buzzer(self._config.PIN_BUZZER)
             self.initialized = True
             return True
-        except GPIOZeroError:
+        except GPIOZeroError as e:
+            print(f"GPIO Initialization failed: {e}")
             self.health_status = GPIOHealthStatus.ERROR
             return False
 
     async def shutdown(self):
+        for task in self._blink_tasks.values():
+            if task and not task.done():
+                task.cancel()
+        for name in self._pins:
+            await self.set_pin_state(name, False)
         for device in self._pins.values():
-            try: await asyncio.to_thread(device.close)
-            except Exception: pass
+            try:
+                await asyncio.to_thread(device.close)
+            except Exception:
+                pass
 
     async def get_pin_status(self, name: str) -> bool:
         if name in self._pins:
             return await asyncio.to_thread(getattr, self._pins[name], 'is_active')
         return False
-        
-    async def get_conveyor_status(self) -> ConveyorStatus:
-        is_active = await self.get_pin_status("conveyor")
-        return ConveyorStatus.RUNNING if is_active else ConveyorStatus.STOPPED
 
-    async def get_gate_position(self) -> GatePosition:
-        is_active = await self.get_pin_status("gate")
-        return GatePosition.OPEN if is_active else GatePosition.CLOSED
-        
     async def toggle_pin(self, name: str) -> Optional[bool]:
         if name in self._pins:
+            if name in self._blink_tasks and not self._blink_tasks[name].done():
+                self._blink_tasks[name].cancel()
             await asyncio.to_thread(self._pins[name].toggle)
             return await self.get_pin_status(name)
         return None
 
     async def set_pin_state(self, name: str, state: bool) -> Optional[bool]:
-        """Sets the state of a pin (True=ON, False=OFF)."""
         if name in self._pins:
+            if name in self._blink_tasks and not self._blink_tasks[name].done():
+                self._blink_tasks[name].cancel()
             action = self._pins[name].on if state else self._pins[name].off
             await asyncio.to_thread(action)
             return await self.get_pin_status(name)
         return None
 
+    # --- THE FIX: The missing `blink_led` method ---
+    async def blink_led(self, name: str, on_time: float = 0.5, off_time: float = 0.5, n: int = 1):
+        """Blinks an LED in the background without blocking."""
+        if name not in self._pins or not isinstance(self._pins[name], LED):
+            print(f"Warning: Cannot blink non-LED pin '{name}'")
+            return
+
+        if name in self._blink_tasks and not self._blink_tasks[name].done():
+            self._blink_tasks[name].cancel()
+
+        async def _blinker():
+            device = self._pins[name]
+            loop_count = n if n is not None else float('inf')
+            count = 0
+            try:
+                while count < loop_count:
+                    device.on()
+                    await asyncio.sleep(on_time)
+                    device.off()
+                    await asyncio.sleep(off_time)
+                    if n is not None:
+                        count += 1
+            except asyncio.CancelledError:
+                device.off() # Ensure LED is off when task is cancelled
+            finally:
+                device.off()
+
+        self._blink_tasks[name] = asyncio.create_task(_blinker())
+
     async def health_check(self) -> GPIOHealthStatus:
         if not Device.pin_factory or not self.initialized:
             self.health_status = GPIOHealthStatus.ERROR
             return self.health_status
-
         try:
             await asyncio.to_thread(getattr, self._pins["led_green"], 'is_active')
             self.health_status = GPIOHealthStatus.OK
-        except (GPIOZeroError, AttributeError, KeyError) as e:
-            print(f"GPIO health check failed: {e}")
+        except (GPIOZeroError, AttributeError, KeyError):
             self.health_status = GPIOHealthStatus.ERROR
-        
         return self.health_status

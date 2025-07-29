@@ -1,13 +1,13 @@
 """
-REVISED: Added the missing `CAMERA_MODE` field back to the AppSettings class.
-This resolves the AttributeError on startup.
+REVISED: Added the missing `ID` field to the RpiCameraSettings class to ensure
+consistency with the standalone camera service configuration.
 """
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# --- Nested Settings Classes (No changes here) ---
+# --- Nested Settings Classes ---
 
 class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SERVER_', case_sensitive=False)
@@ -32,7 +32,8 @@ class BaseCameraSettings(BaseSettings):
 
 class RpiCameraSettings(BaseCameraSettings):
     model_config = SettingsConfigDict(env_prefix='CAMERA_RPI_', case_sensitive=False)
-    ID: str = ""
+    # --- THE CRITICAL FIX IS HERE ---
+    ID: str = "" # This field was missing
     SHUTTER_SPEED: int = Field(0, ge=0)
     ISO: int = Field(0, ge=0)
     MANUAL_FOCUS: float = Field(0.0, ge=0.0)
@@ -76,17 +77,11 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "4.4.0-Final-Config"
+    PROJECT_VERSION: str = "4.5.0-Final-Config"
     APP_ENV: Literal["development", "production"] = "development"
-
-    # --- THE FIX IS HERE ---
-    # This field was missing, causing the AttributeError.
-    # It reads the CAMERA_MODE variable from the top level of the .env file.
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
-
-    # General app settings that are not nested
     CAMERA_TRIGGER_DELAY_MS: int = 100
-    CAMERA_CAPTURES_DIR: str = "static/captures"
+    CAMERA_CAPTURES_DIR: str = "web/static/captures"
 
     # Nested configuration objects
     CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()

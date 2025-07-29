@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">System and Module Status</h1>
+    <div class="row">
+        <!-- System Health Column -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-cpu-fill"></i> System Health</div>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        CPU Usage
+                        <span class="badge bg-primary rounded-pill" id="status-cpu-usage">-- %</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Memory Usage
+                        <span class="badge bg-primary rounded-pill" id="status-mem-usage">-- %</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Disk Usage
+                        <span class="badge bg-primary rounded-pill" id="status-disk-usage">-- %</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        CPU Temperature
+                        <span class="badge bg-primary rounded-pill" id="status-cpu-temp">-- °C</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        System Uptime
+                        <span id="status-uptime">--</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Hardware Status Column -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><i class="bi bi-motherboard-fill"></i> Hardware Modules</div>
+                <ul class="list-group list-group-flush">
+                    <!-- This loop creates a placeholder for each active camera -->
+                    {% for cam_id in active_camera_ids %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Camera Module ({{ cam_id.upper() }})
+                        <span class="badge" data-camera-id="{{ cam_id }}">--</span>
+                    </li>
+                    {% endfor %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        GPIO Controller
+                        <span class="badge" id="status-gpio">--</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Modbus IO Module
+                        <span class="badge" id="status-io-module">--</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center ps-5">
+                        <i class="bi bi-arrow-return-right"></i> Proximity Sensor 1
+                        <span class="badge" id="status-sensor-1">--</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center ps-5">
+                        <i class="bi bi-arrow-return-right"></i> Proximity Sensor 2
+                        <span class="badge" id="status-sensor-2">--</span>
+                    </li>
+                     <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Conveyor Relay
+                        <span class="badge" id="status-conveyor-relay">--</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Gate Relay
+                        <span class="badge" id="status-gate-relay">--</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/status.js"></script>
+{% endblock %}
