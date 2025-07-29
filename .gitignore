@@ -65,7 +65,8 @@ coverage.xml
 
 # Data, Logs, and Databases
 static/captures/
-#web/static/captures
+web/static/captures
+web/static/captures/rpi
 data/
 logs/
 *.log
