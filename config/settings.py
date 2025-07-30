@@ -82,6 +82,8 @@ class AppSettings(BaseSettings):
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
+    UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
+
 
     # Nested configuration objects
     CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()

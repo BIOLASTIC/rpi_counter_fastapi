@@ -1,8 +1,7 @@
 """
-FINAL REVISION: The main application entry point.
-- The path to the Jinja2Templates directory is now made absolute using pathlib.
-  This is a robust fix that resolves the `TemplateNotFound` error regardless of the
-  current working directory.
+The main application entry point. This file initializes all services,
+manages the application lifespan (startup/shutdown), and runs the
+real-time WebSocket broadcast loop.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -12,12 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 
-# Get the absolute path to the project's root directory
-# Path(__file__) is the path to this file (main.py)
-# .parent gives the directory it's in (the project root)
 PROJECT_ROOT = Path(__file__).parent
 
-# The definitive source for application settings and derived configurations
 from config import settings, ACTIVE_CAMERA_IDS
 from app.models.database import engine, Base, AsyncSessionFactory
 from app.api.v1 import api_router as api_v1_router
@@ -29,7 +24,6 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 if settings.APP_ENV == "development":
     from app.api.v1 import debug as debug_router
 
-# Import all application components
 from app.core.gpio_controller import AsyncGPIOController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.usr8000_client import AsyncUSRIOController
@@ -64,7 +58,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
     
-    # ... (service initialization remains the same) ...
+    # --- Service Initialization ---
     app.state.gpio_controller = await AsyncGPIOController.get_instance()
     app.state.notification_service = AsyncNotificationService(gpio_controller=app.state.gpio_controller, db_session_factory=AsyncSessionFactory)
     app.state.camera_manager = AsyncCameraManager(notification_service=app.state.notification_service, captures_dir=settings.CAMERA_CAPTURES_DIR)
@@ -74,23 +68,36 @@ async def lifespan(app: FastAPI):
     app.state.detection_service = AsyncDetectionService(gpio_controller=app.state.gpio_controller, db_session_factory=AsyncSessionFactory, sensor_config=settings.SENSORS, camera_manager=app.state.camera_manager, on_box_counted=app.state.orchestration_service.on_box_counted)
     await app.state.detection_service.initialize()
     app.state.sensor_handler = AsyncProximitySensorHandler(io_controller=app.state.io_controller, event_callback=app.state.detection_service.handle_sensor_event)
-    app.state.system_service = AsyncSystemService(gpio_controller=app.state.gpio_controller, camera_manager=app.state.camera_manager, sensor_handler=app.state.sensor_handler, db_session_factory=AsyncSessionFactory, sensor_config=settings.SENSORS)
-    app.state.active_camera_ids = ACTIVE_CAMERA_IDS
     
+    # This is where the services are injected into the system_service
+    app.state.system_service = AsyncSystemService(
+        gpio_controller=app.state.gpio_controller,
+        camera_manager=app.state.camera_manager,
+        sensor_handler=app.state.sensor_handler,
+        detection_service=app.state.detection_service,
+        orchestration_service=app.state.orchestration_service,
+        db_session_factory=AsyncSessionFactory,
+        sensor_config=settings.SENSORS
+    )
+    
+    app.state.active_camera_ids = ACTIVE_CAMERA_IDS
     app.state.notification_service.start()
     app.state.sensor_handler.start()
     app.state.camera_manager.start()
 
+    # --- Real-time Broadcast Loop ---
     async def broadcast_updates():
         while True:
             try:
                 system_status = await app.state.system_service.get_system_status()
-                count_status = { "total_count": await app.state.detection_service.get_current_total_count() }
+                count_status = await app.state.detection_service.get_counts()
                 orchestration_status = app.state.orchestration_service.get_status()
+                
                 await websocket_manager.broadcast_json({"type": "system_status", "data": system_status})
                 await websocket_manager.broadcast_json({"type": "detection_status", "data": count_status})
                 await websocket_manager.broadcast_json({"type": "orchestration_status", "data": orchestration_status})
-                await asyncio.sleep(0.1)
+                
+                await asyncio.sleep(0.2)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -105,7 +112,6 @@ async def lifespan(app: FastAPI):
     
     print("--- Application shutting down... ---")
     app.state.broadcast_task.cancel()
-    # ... (shutdown logic remains the same) ...
     await app.state.sensor_handler.stop()
     app.state.notification_service.stop()
     await app.state.camera_manager.stop()
@@ -120,7 +126,6 @@ def create_app() -> FastAPI:
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     
-    # Mount static directories using absolute paths
     app.mount("/static", NoCacheStaticFiles(directory=PROJECT_ROOT / "web/static"), name="static")
     app.mount("/captures", NoCacheStaticFiles(directory=PROJECT_ROOT / settings.CAMERA_CAPTURES_DIR), name="captures")
     
@@ -132,11 +137,7 @@ def create_app() -> FastAPI:
     if settings.APP_ENV == "development":
         app.include_router(debug_router.router, prefix="/api/v1/debug", tags=["Debug"])
         
+    app.state.templates = Jinja2Templates(directory=str(PROJECT_ROOT / "web/templates"))
     return app
 
-# Main application instance
 app = create_app()
-
-# --- THE CRITICAL FIX IS HERE ---
-# Initialize Jinja2Templates with a robust, absolute path.
-app.state.templates = Jinja2Templates(directory=str(PROJECT_ROOT / "web/templates"))

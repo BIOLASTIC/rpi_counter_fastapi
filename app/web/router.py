@@ -27,8 +27,13 @@ def NoCacheTemplateResponse(request: Request, name: str, context: dict):
 
 @router.get("/", response_class=HTMLResponse)
 async def read_dashboard(request: Request):
-    # THE FIX: Removed 'pages/' prefix
-    return NoCacheTemplateResponse(request, "dashboard.html", {"request": request})
+    # This function now passes configuration from the backend to the frontend on page load.
+    context = {
+        "request": request,
+        "initial_batch_size": 50, # Set the default batch size here
+        "animation_time": settings.UI_ANIMATION_TRANSIT_TIME_SEC
+    }
+    return NoCacheTemplateResponse(request, "dashboard.html", context)
 
 @router.get("/status", response_class=HTMLResponse)
 async def read_status_page(request: Request):

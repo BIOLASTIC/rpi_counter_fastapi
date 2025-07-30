@@ -1,55 +1,107 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row">
-    <!-- Left Column: Controls -->
-    <div class="col-lg-4 mb-4">
-        <!-- Batch Control Card -->
-        <div class="card mb-4">
-            <div class="card-header fw-bold"><i class="bi bi-stack"></i> Batch Control</div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <label for="batch-size-input" class="form-label">Batch Size</label>
-                    <input type="number" class="form-control" id="batch-size-input" value="10" min="1">
+<link rel="stylesheet" href="/static/css/dashboard_v2.css">
+
+<div class="dashboard-grid">
+
+    <!-- TOP ROW: Contains Animation and Progress side-by-side -->
+    <div class="top-row">
+        <!-- ZONE 1: CONVEYOR ANIMATION -->
+        <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
+            <div id="conveyor-belt"></div>
+            <div id="conveyor-overlay-info">
+                <div class="info-box">
+                    <span class="info-label">ENTERED</span>
+                    <span class="info-value" id="count-entered">0</span>
                 </div>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-primary" id="start-batch-btn">Start Batch</button>
-                    <button class="btn btn-danger" id="stop-batch-btn">Stop Process</button>
+                <div class="info-box on-belt">
+                    <span class="info-label"><i class="bi bi-box-seam"></i> ON BELT</span>
+                    <span class="info-value" id="count-on-belt">0</span>
                 </div>
-                <hr>
-                <div class="text-center">
-                    <div>Mode: <span class="badge bg-secondary" id="system-mode">STOPPED</span></div>
-                    <div class="mt-2 fs-5">Progress: <span id="batch-progress">0</span> / <span id="batch-target">0</span></div>
+                <div class="info-box">
+                    <span class="info-label">EXITED</span>
+                    <span class="info-value" id="count-exited">0</span>
                 </div>
             </div>
         </div>
 
-        <!-- Box Counter Card -->
-        <div class="card mb-4">
-            <div class="card-body text-center">
-                <h5 class="card-title">Total Box Count (All Time)</h5>
-                <p class="display-4 fw-bold" id="total-box-count">0</p>
-                <button class="btn btn-outline-danger btn-sm" id="reset-total-button">Reset Total</button>
+        <!-- ZONE 2: BATCH PROGRESS -->
+        <div id="batch-progress-zone" class="dashboard-zone">
+            <h5 class="zone-title"><i class="bi bi-stack"></i> Progress</h5>
+            <div class="progress-container">
+                <svg class="progress-circle" viewBox="0 0 100 100">
+                    <circle class="progress-circle__trail" cx="50" cy="50" r="45"></circle>
+                    <circle class="progress-circle__path" cx="50" cy="50" r="45"></circle>
+                </svg>
+                <div class="progress-text">
+                    <div id="progress-percentage">0%</div>
+                    <div id="progress-details">0 / 0</div>
+                </div>
             </div>
+            <div class="mode-status">Mode: <span class="status-badge" id="system-mode">--</span></div>
         </div>
     </div>
 
-    <!-- Right Column: Visuals -->
-    <div class="col-lg-8 mb-4">
-        {% for cam_id in active_camera_ids %}
-        <div class="card mb-4" id="capture-card-{{ cam_id }}">
-             <div class="card-header fw-bold"><i class="bi bi-camera-video-fill"></i> Last Event Capture ({{ cam_id.upper() }})</div>
-             <div class="card-body p-2">
-                 <a id="event-capture-link-{{ cam_id }}" href="#" target="_blank">
-                     <img id="event-capture-image-{{ cam_id }}" src="/static/images/placeholder.jpg" class="img-fluid rounded" alt="Last event capture for {{ cam_id }}">
-                 </a>
-             </div>
+    <!-- ZONE 3: LIVE FEEDS -->
+    <div id="live-feeds-container" class="dashboard-zone">
+        <h5 class="zone-title"><i class="bi bi-camera-video-fill"></i> Live Feeds</h5>
+        <div class="feeds-grid">
+            {% for cam_id in active_camera_ids %}
+            <div class="camera-feed-container" id="feed-container-{{ cam_id }}">
+                <div class="camera-title">{{ cam_id.upper() }}</div>
+                <button class="fullscreen-btn" data-cam-id="{{ cam_id }}" title="Toggle Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
+                <img id="live-camera-feed-{{ cam_id }}" src="/static/images/placeholder.jpg" alt="Live feed for camera {{ cam_id }}">
+                <div id="camera-offline-overlay-{{ cam_id }}" class="camera-offline-overlay"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
+            </div>
+            {% endfor %}
+            {% if not active_camera_ids %}
+            <p class="text-muted text-center">No camera services are configured.</p>
+            {% endif %}
         </div>
-        {% endfor %}
+    </div>
+
+    <!-- ZONE 4: HARDWARE STATUS -->
+    <div id="system-status-zone" class="dashboard-zone">
+        <h5 class="zone-title"><i class="bi bi-motherboard-fill"></i> Hardware Status</h5>
+        <div class="status-grid">
+            <div class="status-item"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry) <span class="status-badge" id="status-sensor-1">--</span></div>
+            <div class="status-item"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit) <span class="status-badge" id="status-sensor-2">--</span></div>
+            <div class="status-item"><i class="bi bi-fast-forward-fill"></i> Conveyor Relay <span class="status-badge" id="status-conveyor-relay">--</span></div>
+            <div class="status-item"><i class="bi bi-sign-stop-fill"></i> Gate Relay <span class="status-badge" id="status-gate-relay">--</span></div>
+            <div class="status-item"><i class="bi bi-cpu-fill"></i> GPIO Controller <span class="status-badge" id="status-gpio">--</span></div>
+            <div class="status-item"><i class="bi bi-usb-plug-fill"></i> IO Module <span class="status-badge" id="status-io-module">--</span></div>
+            {% for cam_id in active_camera_ids %}
+            <div class="status-item"><i class="bi bi-camera-fill"></i> Camera ({{ cam_id.upper() }}) <span class="status-badge" id="status-camera-{{ cam_id }}">--</span></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ZONE 5: PROCESS CONTROL -->
+    <div id="control-zone" class="dashboard-zone">
+         <h5 class="zone-title"><i class="bi bi-toggles"></i> Process Control & Configuration</h5>
+        <div class="controls-grid">
+            <div class="control-section">
+                <h6>Control</h6>
+                <div class="control-buttons">
+                    <button class="btn btn-success" id="start-batch-btn"><i class="bi bi-play-fill"></i> Start</button>
+                    <button class="btn btn-danger" id="stop-batch-btn"><i class="bi bi-stop-fill"></i> Stop</button>
+                    <button class="btn btn-outline-warning" id="reset-all-btn" title="Reset all counts to zero and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                </div>
+            </div>
+            <div class="control-section">
+                <h6>Configuration</h6>
+                <div class="config-inputs">
+                    <div class="config-item"><label for="batch-size-input">Batch Size</label><input type="number" class="form-control" id="batch-size-input" value="{{ initial_batch_size }}" min="1"></div>
+                    <div class="config-item"><label for="delay-input">Delay (sec)</label><input type="number" class="form-control" id="delay-input" value="5" min="0"></div>
+                    <button class="btn btn-primary" id="save-config-btn"><i class="bi bi-save-fill"></i> Save</button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard_v2.js"></script>
 {% endblock %}

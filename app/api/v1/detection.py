@@ -8,9 +8,13 @@ def get_detection_service(request: Request) -> AsyncDetectionService:
 
 @router.get("/")
 async def get_detection_status(service: AsyncDetectionService = Depends(get_detection_service)):
-    """Get current detection status and count."""
-    count = await service.get_current_count()
-    return {"box_count": count, "state": service._state.name}
+    """Get current detection status and counts."""
+    # --- FIX: Call the new get_counts() method ---
+    counts = await service.get_counts()
+    return {
+        "counts": counts,
+        "state": service._state.name
+    }
 
 @router.post("/reset", status_code=200)
 async def reset_counter(service: AsyncDetectionService = Depends(get_detection_service)):
