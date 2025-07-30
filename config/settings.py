@@ -41,6 +41,11 @@ class RpiCameraSettings(BaseCameraSettings):
 class UsbCameraSettings(BaseCameraSettings):
     model_config = SettingsConfigDict(env_prefix='CAMERA_USB_', case_sensitive=False)
     DEVICE_INDEX: int = 0
+    # --- NEW MANUAL CAMERA CONTROLS FOR USB ---
+    EXPOSURE: int = 0  # 0 for auto, or a specific value (e.g., -7 for fast shutter)
+    GAIN: int = 0      # 0 for auto, or a specific value (e.g., 200 for low light)
+    BRIGHTNESS: int = 128 # Typically 0-255, 128 is a neutral default
+    AUTOFOCUS: bool = True # Enable or disable autofocus
 
 class GpioSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='GPIO_', case_sensitive=False)
@@ -55,8 +60,10 @@ class ModbusSettings(BaseSettings):
     PORT: str = "/dev/ttyUSB0"
     BAUDRATE: int = 9600
     DEVICE_ADDRESS: int = 1
+    START_ADDRESS: int = 1
     TIMEOUT_SEC: float = 0.2
     POLLING_MS: int = 50
+    QUANTITY: int = 4
 
 class SensorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SENSORS_', case_sensitive=False)

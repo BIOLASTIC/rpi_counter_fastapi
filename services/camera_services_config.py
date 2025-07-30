@@ -5,8 +5,18 @@ REVISED: Added logic to derive ACTIVE_CAMERA_IDS for the services.
 from functools import lru_cache
 from pydantic import Field, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
-# --- Reusable Base Classes ---
+# --- THE FIX: Create a robust, absolute path to the .env file ---
+# This ensures the .env file is found regardless of where the script is executed.
+ENV_PATH = Path(__file__).parent.parent / ".env"
+
+# --- Add a diagnostic print statement ---
+if ENV_PATH.exists():
+    print(f"[Camera Config] Loading settings from: {ENV_PATH}")
+else:
+    print(f"[Camera Config] WARNING: .env file not found at {ENV_PATH}. Using default values.")
+
 
 class BaseCameraSettings(BaseSettings):
     RESOLUTION_WIDTH: int = 1280
@@ -23,6 +33,11 @@ class RpiCameraSettings(BaseCameraSettings):
 class UsbCameraSettings(BaseCameraSettings):
     model_config = SettingsConfigDict(env_prefix='CAMERA_USB_', case_sensitive=False)
     DEVICE_INDEX: int = 0
+    EXPOSURE: int = 0
+    GAIN: int = 0
+    # Corrected the default brightness to be within the valid 0-255 range
+    BRIGHTNESS: int = Field(128, ge=0, le=255) 
+    AUTOFOCUS: bool = True
 
 class RedisSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='REDIS_', case_sensitive=False)
@@ -32,8 +47,10 @@ class RedisSettings(BaseSettings):
 # --- Main Settings Container for Camera Services ---
 
 class CameraServicesSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='../.env', extra='ignore', case_sensitive=False)
-    CAMERA_MODE: str = 'both' # Load the camera mode from .env
+    # --- THE FIX: Use the robust, absolute path ---
+    model_config = SettingsConfigDict(env_file=str(ENV_PATH), extra='ignore', case_sensitive=False)
+    
+    CAMERA_MODE: str = 'both'
     CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()
     CAMERA_USB: UsbCameraSettings = UsbCameraSettings()
     REDIS: RedisSettings = RedisSettings()

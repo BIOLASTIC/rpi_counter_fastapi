@@ -32,7 +32,8 @@ class AsyncUSRIOController:
             timeout=self._config.TIMEOUT_SEC,
         )
         self._is_connected = False
-        print(f"USR-8000 Real Client: Initialized for port {self._config.PORT}")
+        # --- DIAGNOSTIC LOGGING ---
+        print("--- USR-IO Modbus Client Initialized with a Read Address of 0 ---")
 
     async def connect(self) -> bool:
         if self._is_connected:
@@ -59,7 +60,7 @@ class AsyncUSRIOController:
 
     async def read_input_channels(self) -> Optional[Dict[int, bool]]:
         """
-        Reads all 8 discrete input channels from the hardware. This method
+        Reads all discrete input channels from the hardware. This method
         is now designed to be self-healing and robust against connection drops.
         """
         # --- DEFINITIVE FIX: Ensure connection before every read ---
@@ -68,8 +69,10 @@ class AsyncUSRIOController:
             return None
         
         try:
+            # --- THE CRITICAL CHANGE: Trying address 0 as a final test ---
+            # Some devices use 0-based indexing for the protocol despite 1-based documentation.
             result = await self.client.read_discrete_inputs(
-                address=0, count=8, slave=self._config.DEVICE_ADDRESS
+                address=0, count=self._config.QUANTITY, slave=self._config.DEVICE_ADDRESS
             )
 
             if result.isError():
@@ -78,8 +81,8 @@ class AsyncUSRIOController:
                 await self.disconnect()
                 return None
             
-            # This is a list of 8 booleans.
-            bits = result.bits[:8]
+            # This is a list of booleans.
+            bits = result.bits[:self._config.QUANTITY]
             return {i + 1: bits[i] for i in range(len(bits))}
 
         except ConnectionException as e:
