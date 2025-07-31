@@ -7,28 +7,22 @@
 
     <!-- TOP ROW: Contains Animation and Progress side-by-side -->
     <div class="top-row">
-        <!-- ZONE 1: CONVEYOR ANIMATION -->
+        <!-- ZONE 1: CONVEYOR ANIMATION (with detailed count) -->
         <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
             <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
-                <div class="info-box">
-                    <span class="info-label">ENTERED</span>
-                    <span class="info-value" id="count-entered">0</span>
-                </div>
+                <!-- NOTE: The concepts of "Entered" and "On Belt" are no longer tracked in the new logic. -->
+                <!-- We will display the total count for the current run. -->
                 <div class="info-box on-belt">
-                    <span class="info-label"><i class="bi bi-box-seam"></i> ON BELT</span>
-                    <span class="info-value" id="count-on-belt">0</span>
-                </div>
-                <div class="info-box">
-                    <span class="info-label">EXITED</span>
+                    <span class="info-label"><i class="bi bi-box-seam"></i> PROCESSED THIS RUN</span>
                     <span class="info-value" id="count-exited">0</span>
                 </div>
             </div>
         </div>
 
-        <!-- ZONE 2: BATCH PROGRESS -->
+        <!-- ZONE 2: BATCH PROGRESS (now shows run status) -->
         <div id="batch-progress-zone" class="dashboard-zone">
-            <h5 class="zone-title"><i class="bi bi-stack"></i> Progress</h5>
+            <h5 class="zone-title"><i class="bi bi-stack"></i> Run Status</h5>
             <div class="progress-container">
                 <svg class="progress-circle" viewBox="0 0 100 100">
                     <circle class="progress-circle__trail" cx="50" cy="50" r="45"></circle>
@@ -36,10 +30,11 @@
                 </svg>
                 <div class="progress-text">
                     <div id="progress-percentage">0%</div>
-                    <div id="progress-details">0 / 0</div>
+                    <div id="progress-details">IDLE</div>
                 </div>
             </div>
             <div class="mode-status">Mode: <span class="status-badge" id="system-mode">--</span></div>
+            <div class="mode-status mt-2">Profile: <span class="status-badge" id="active-profile-display">None</span></div>
         </div>
     </div>
 
@@ -50,9 +45,8 @@
             {% for cam_id in active_camera_ids %}
             <div class="camera-feed-container" id="feed-container-{{ cam_id }}">
                 <div class="camera-title">{{ cam_id.upper() }}</div>
-                <button class="fullscreen-btn" data-cam-id="{{ cam_id }}" title="Toggle Fullscreen"><i class="bi bi-arrows-fullscreen"></i></button>
                 <img id="live-camera-feed-{{ cam_id }}" src="/static/images/placeholder.jpg" alt="Live feed for camera {{ cam_id }}">
-                <div id="camera-offline-overlay-{{ cam_id }}" class="camera-offline-overlay"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
+                <div id="camera-offline-overlay-{{ cam_id }}" class="camera-offline-overlay hidden"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
             </div>
             {% endfor %}
             {% if not active_camera_ids %}
@@ -61,7 +55,7 @@
         </div>
     </div>
 
-    <!-- ZONE 4: HARDWARE STATUS -->
+    <!-- ZONE 4: HARDWARE STATUS (Restored from old dashboard) -->
     <div id="system-status-zone" class="dashboard-zone">
         <h5 class="zone-title"><i class="bi bi-motherboard-fill"></i> Hardware Status</h5>
         <div class="status-grid">
@@ -69,6 +63,7 @@
             <div class="status-item"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit) <span class="status-badge" id="status-sensor-2">--</span></div>
             <div class="status-item"><i class="bi bi-fast-forward-fill"></i> Conveyor Relay <span class="status-badge" id="status-conveyor-relay">--</span></div>
             <div class="status-item"><i class="bi bi-sign-stop-fill"></i> Gate Relay <span class="status-badge" id="status-gate-relay">--</span></div>
+            <div class="status-item"><i class="bi bi-exclude"></i> Diverter Relay <span class="status-badge" id="status-diverter-relay">--</span></div>
             <div class="status-item"><i class="bi bi-cpu-fill"></i> GPIO Controller <span class="status-badge" id="status-gpio">--</span></div>
             <div class="status-item"><i class="bi bi-usb-plug-fill"></i> IO Module <span class="status-badge" id="status-io-module">--</span></div>
             {% for cam_id in active_camera_ids %}
@@ -77,25 +72,29 @@
         </div>
     </div>
 
-    <!-- ZONE 5: PROCESS CONTROL -->
+    <!-- ZONE 5: PROCESS CONTROL (New profile controls + old reset button) -->
     <div id="control-zone" class="dashboard-zone">
-         <h5 class="zone-title"><i class="bi bi-toggles"></i> Process Control & Configuration</h5>
-        <div class="controls-grid">
-            <div class="control-section">
-                <h6>Control</h6>
-                <div class="control-buttons">
-                    <button class="btn btn-success" id="start-batch-btn"><i class="bi bi-play-fill"></i> Start</button>
-                    <button class="btn btn-danger" id="stop-batch-btn"><i class="bi bi-stop-fill"></i> Stop</button>
-                    <button class="btn btn-outline-warning" id="reset-all-btn" title="Reset all counts to zero and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
-                </div>
+         <h5 class="zone-title"><i class="bi bi-toggles"></i> Production Run Control</h5>
+         <div class="alert alert-info">
+             <strong>Step 1:</strong> Select an Object Profile (Recipe). <br>
+             <strong>Step 2:</strong> Click "Load & Start Run". The camera will be configured automatically.
+         </div>
+        <div class="row align-items-end g-3">
+            <div class="col-lg-5">
+                <label for="object-profile-select" class="form-label"><strong>Object Profile (Recipe)</strong></label>
+                <select id="object-profile-select" class="form-select form-select-lg">
+                    <option value="">-- Select a Recipe --</option>
+                    {% for p in object_profiles %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <div class="control-section">
-                <h6>Configuration</h6>
-                <div class="config-inputs">
-                    <div class="config-item"><label for="batch-size-input">Batch Size</label><input type="number" class="form-control" id="batch-size-input" value="{{ initial_batch_size }}" min="1"></div>
-                    <div class="config-item"><label for="delay-input">Delay (sec)</label><input type="number" class="form-control" id="delay-input" value="5" min="0"></div>
-                    <button class="btn btn-primary" id="save-config-btn"><i class="bi bi-save-fill"></i> Save</button>
-                </div>
+            <div class="col-lg-7">
+                 <div class="d-grid gap-2 d-md-flex">
+                    <button class="btn btn-success btn-lg flex-grow-1" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
+                    <button class="btn btn-danger btn-lg flex-grow-1" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
+                    <button class="btn btn-outline-warning btn-lg" id="reset-all-btn" title="Reset all counts to zero and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                 </div>
             </div>
         </div>
     </div>

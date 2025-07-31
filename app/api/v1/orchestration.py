@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, Request, Body
+"""
+REVISED FOR PHASE 3: API endpoints for controlling the high-level
+orchestration of production runs. Replaces the old "batch" system.
+"""
+from fastapi import APIRouter, Depends, Request, Body, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.orchestration_service import AsyncOrchestrationService
@@ -6,42 +10,44 @@ from app.services.orchestration_service import AsyncOrchestrationService
 router = APIRouter()
 
 def get_orchestration_service(request: Request) -> AsyncOrchestrationService:
+    """Dependency to get the orchestration service instance."""
     return request.app.state.orchestration_service
 
-class BatchStartRequest(BaseModel):
-    size: int = Field(..., gt=0, description="The number of boxes to count in one batch.")
+class SetActiveProfilePayload(BaseModel):
+    """Defines the request body for setting an active profile."""
+    object_profile_id: int = Field(..., gt=0, description="The ID of the ObjectProfile to activate for the run.")
 
-# --- NEW: Pydantic model for the configuration payload ---
-class BatchConfigRequest(BaseModel):
-    batch_size: int = Field(..., gt=0, description="The number of items for the next batch.")
-    post_batch_delay: int = Field(..., ge=0, description="The delay in seconds after a batch completes.")
-
-@router.post("/batch/start", status_code=202)
-async def start_batch_process(
-    payload: BatchStartRequest,
+@router.post("/run/set-profile", status_code=202)
+async def set_active_profile(
+    payload: SetActiveProfilePayload,
     service: AsyncOrchestrationService = Depends(get_orchestration_service)
 ):
-    """Starts a new batch counting process."""
-    await service.start_batch(payload.size)
-    return {"message": f"Batch process started with a target size of {payload.size}."}
+    """
+    Loads an Object Profile from the database, makes it the active profile
+    for the system, and commands the camera service to apply the associated
+    camera settings. This is the first step before starting a run.
+    """
+    success = await service.load_and_set_active_profile(payload.object_profile_id)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"ObjectProfile with ID {payload.object_profile_id} not found."
+        )
+    return {"message": "Active profile loaded and camera configured successfully."}
 
-@router.post("/batch/stop", status_code=202)
-async def stop_batch_process(service: AsyncOrchestrationService = Depends(get_orchestration_service)):
-    """Stops the current counting process immediately."""
-    await service.stop_process()
-    return {"message": "Batch process stopped."}
+@router.post("/run/start", status_code=202)
+async def start_production_run(service: AsyncOrchestrationService = Depends(get_orchestration_service)):
+    """Starts the conveyor belt if a profile has been loaded."""
+    await service.start_run()
+    return {"message": "Production run started."}
 
-@router.get("/batch/status")
-async def get_batch_status(service: AsyncOrchestrationService = Depends(get_orchestration_service)):
-    """Gets the current status of the batch process."""
+@router.post("/run/stop", status_code=202)
+async def stop_production_run(service: AsyncOrchestrationService = Depends(get_orchestration_service)):
+    """Stops the conveyor belt and unloads the active profile."""
+    await service.stop_run()
+    return {"message": "Production run stopped and profile unloaded."}
+
+@router.get("/run/status")
+async def get_run_status(service: AsyncOrchestrationService = Depends(get_orchestration_service)):
+    """Gets the current status of the orchestration service."""
     return service.get_status()
-
-# --- NEW: API endpoint to receive new configuration ---
-@router.post("/batch/config", status_code=200)
-async def configure_batch_process(
-    payload: BatchConfigRequest,
-    service: AsyncOrchestrationService = Depends(get_orchestration_service)
-):
-    """Updates the batch configuration, such as size and delay, live."""
-    await service.update_batch_config(size=payload.batch_size, delay=payload.post_batch_delay)
-    return {"message": "Batch configuration updated successfully."}

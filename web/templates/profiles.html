@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Profile Management</h1>
+
+    <div class="row g-4">
+        <!-- Camera Profiles Column -->
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="bi bi-camera-fill me-2"></i>Camera Profiles</h5>
+                    <button class="btn btn-primary btn-sm" id="add-camera-profile-btn">
+                        <i class="bi bi-plus-circle"></i> Add New
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Reusable camera hardware settings. Create these first.</p>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Exposure</th>
+                                    <th>Gain</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="camera-profiles-table-body">
+                                <!-- JS will populate this -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Object Profiles Column -->
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="bi bi-box-seam me-2"></i>Object Profiles (Recipes)</h5>
+                    <button class="btn btn-primary btn-sm" id="add-object-profile-btn">
+                        <i class="bi bi-plus-circle"></i> Add New
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">The master "recipes" for a production run. Links to a camera profile.</p>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Camera Profile</th>
+                                    <th>Sort Offset (ms)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="object-profiles-table-body">
+                                <!-- JS will populate this -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Profile Modal -->
+<div class="modal fade" id="camera-profile-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="camera-modal-title">Camera Profile</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="camera-profile-form">
+                    <input type="hidden" id="camera-profile-id">
+                    <div class="mb-3">
+                        <label for="camera-profile-name" class="form-label">Profile Name</label>
+                        <input type="text" class="form-control" id="camera-profile-name" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3"><label for="camera-profile-exposure" class="form-label">Exposure</label><input type="number" class="form-control" id="camera-profile-exposure" required></div>
+                        <div class="col-6 mb-3"><label for="camera-profile-gain" class="form-label">Gain</label><input type="number" class="form-control" id="camera-profile-gain" required></div>
+                    </div>
+                    <div class="row">
+                         <div class="col-6 mb-3"><label for="camera-profile-brightness" class="form-label">Brightness</label><input type="number" class="form-control" id="camera-profile-brightness" required></div>
+                        <div class="col-6 mb-3"><label for="camera-profile-wb" class="form-label">White Balance Temp</label><input type="number" class="form-control" id="camera-profile-wb" required></div>
+                    </div>
+                    <div class="mb-3 form-check"><input type="checkbox" class="form-check-input" id="camera-profile-autofocus"><label class="form-check-label" for="camera-profile-autofocus">Autofocus</label></div>
+                    <div class="mb-3"><label for="camera-profile-desc" class="form-label">Description</label><textarea class="form-control" id="camera-profile-desc" rows="2"></textarea></div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Save Profile</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Object Profile Modal -->
+<div class="modal fade" id="object-profile-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="object-modal-title">Object Profile (Recipe)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="object-profile-form">
+                    <input type="hidden" id="object-profile-id">
+                    <div class="mb-3">
+                        <label for="object-profile-name" class="form-label">Recipe Name</label>
+                        <input type="text" class="form-control" id="object-profile-name" required>
+                    </div>
+                     <div class="mb-3">
+                        <label for="object-camera-profile-select" class="form-label">Camera Profile</label>
+                        <select class="form-select" id="object-camera-profile-select" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="object-sort-offset" class="form-label">Sort Time Offset (ms)</label>
+                        <input type="number" class="form-control" id="object-sort-offset" required>
+                        <div class="form-text">Adjusts sorting time. Negative values sort earlier, positive values later.</div>
+                    </div>
+                    <div class="mb-3"><label for="object-profile-desc" class="form-label">Description</label><textarea class="form-control" id="object-profile-desc" rows="2"></textarea></div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Save Recipe</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/profiles.js"></script>
+{% endblock %}

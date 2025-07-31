@@ -32,8 +32,7 @@ class BaseCameraSettings(BaseSettings):
 
 class RpiCameraSettings(BaseCameraSettings):
     model_config = SettingsConfigDict(env_prefix='CAMERA_RPI_', case_sensitive=False)
-    # --- THE CRITICAL FIX IS HERE ---
-    ID: str = "" # This field was missing
+    ID: str = ""
     SHUTTER_SPEED: int = Field(0, ge=0)
     ISO: int = Field(0, ge=0)
     MANUAL_FOCUS: float = Field(0.0, ge=0.0)
@@ -41,11 +40,11 @@ class RpiCameraSettings(BaseCameraSettings):
 class UsbCameraSettings(BaseCameraSettings):
     model_config = SettingsConfigDict(env_prefix='CAMERA_USB_', case_sensitive=False)
     DEVICE_INDEX: int = 0
-    # --- NEW MANUAL CAMERA CONTROLS FOR USB ---
-    EXPOSURE: int = 0  # 0 for auto, or a specific value (e.g., -7 for fast shutter)
-    GAIN: int = 0      # 0 for auto, or a specific value (e.g., 200 for low light)
-    BRIGHTNESS: int = 128 # Typically 0-255, 128 is a neutral default
-    AUTOFOCUS: bool = True # Enable or disable autofocus
+    EXPOSURE: int = 0
+    GAIN: int = 0
+    BRIGHTNESS: int = Field(128, ge=0, le=255)
+    AUTOFOCUS: bool = True
+    WHITE_BALANCE_TEMP: int = 0
 
 class GpioSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='GPIO_', case_sensitive=False)
@@ -54,6 +53,8 @@ class GpioSettings(BaseSettings):
     PIN_STATUS_LED_GREEN: int = 27
     PIN_STATUS_LED_RED: int = 23
     PIN_BUZZER: int = 24
+    # --- NEW: GPIO Pin for the sorting mechanism ---
+    PIN_DIVERTER_RELAY: int = 19
 
 class ModbusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
@@ -78,13 +79,18 @@ class LoggingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='LOGGING_', case_sensitive=False)
     VERBOSE_LOGGING: bool = False
 
+class ConveyorSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
+    SPEED_M_PER_SEC: float = 0.5
+    CAMERA_TO_SORTER_DISTANCE_M: float = 1.2
+
 # --- Main AppSettings Container ---
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "4.5.0-Final-Config"
+    PROJECT_VERSION: str = "5.1.0-Profiles-Integration"
     APP_ENV: Literal["development", "production"] = "development"
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
@@ -103,6 +109,7 @@ class AppSettings(BaseSettings):
     SENSORS: SensorSettings = SensorSettings()
     ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
     LOGGING: LoggingSettings = LoggingSettings()
+    CONVEYOR: ConveyorSettings = ConveyorSettings()
 
 @lru_cache()
 def get_settings() -> AppSettings:

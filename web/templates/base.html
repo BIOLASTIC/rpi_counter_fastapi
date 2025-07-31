@@ -20,6 +20,8 @@
                     <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="/status">System Status</a></li>
                     <li class="nav-item"><a class="nav-link" href="/hardware">Hardware</a></li>
+                    <!-- NEW: Link to the profile management page -->
+                    <li class="nav-item"><a class="nav-link" href="/profiles">Profile Management</a></li>
 
                     <!-- Dropdown for cameras, conditionally rendered -->
                     <li class="nav-item dropdown">
@@ -27,7 +29,6 @@
                             Cameras
                         </a>
                         <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdown">
-                            <!-- THE FIX: Use the injected context variable, not app.state -->
                             {% if 'rpi' in active_camera_ids %}
                             <li><a class="dropdown-item" href="/live-view/rpi">RPI Cam Live</a></li>
                             <li><a class="dropdown-item" href="/gallery/rpi">RPI Cam Gallery</a></li>
@@ -57,7 +58,7 @@
             </div>
         </div>
     </nav>
-    <main class="container mt-4">
+    <main class="container-fluid mt-4">
         {% block content %}{% endblock %}
     </main>
 

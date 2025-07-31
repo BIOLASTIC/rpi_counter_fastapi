@@ -31,7 +31,6 @@ class AsyncGPIOController:
             self._pins: Dict[str, Any] = {}
             self.initialized = False
             self.health_status = GPIOHealthStatus.OK if Device.pin_factory else GPIOHealthStatus.ERROR
-            # Task manager for blinking LEDs
             self._blink_tasks: Dict[str, asyncio.Task] = {}
 
     @classmethod
@@ -48,6 +47,8 @@ class AsyncGPIOController:
         try:
             self._pins["conveyor"] = DigitalOutputDevice(self._config.PIN_CONVEYOR_RELAY, active_high=False)
             self._pins["gate"] = DigitalOutputDevice(self._config.PIN_GATE_RELAY, active_high=False)
+            # --- NEW: Initialize the diverter relay pin ---
+            self._pins["diverter"] = DigitalOutputDevice(self._config.PIN_DIVERTER_RELAY, active_high=False)
             self._pins["led_green"] = LED(self._config.PIN_STATUS_LED_GREEN)
             self._pins["led_red"] = LED(self._config.PIN_STATUS_LED_RED)
             self._pins["buzzer"] = Buzzer(self._config.PIN_BUZZER)
@@ -76,6 +77,7 @@ class AsyncGPIOController:
         return False
 
     async def toggle_pin(self, name: str) -> Optional[bool]:
+        # --- NEW: Add 'diverter' to the list of toggleable pins ---
         if name in self._pins:
             if name in self._blink_tasks and not self._blink_tasks[name].done():
                 self._blink_tasks[name].cancel()
@@ -92,7 +94,6 @@ class AsyncGPIOController:
             return await self.get_pin_status(name)
         return None
 
-    # --- THE FIX: The missing `blink_led` method ---
     async def blink_led(self, name: str, on_time: float = 0.5, off_time: float = 0.5, n: int = 1):
         """Blinks an LED in the background without blocking."""
         if name not in self._pins or not isinstance(self._pins[name], LED):
@@ -115,7 +116,7 @@ class AsyncGPIOController:
                     if n is not None:
                         count += 1
             except asyncio.CancelledError:
-                device.off() # Ensure LED is off when task is cancelled
+                device.off()
             finally:
                 device.off()
 
