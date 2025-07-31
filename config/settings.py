@@ -1,9 +1,11 @@
 """
-REVISED: Added the missing `ID` field to the RpiCameraSettings class to ensure
-consistency with the standalone camera service configuration.
+REVISED: Complete overhaul for Modbus I/O.
+- Removed the obsolete GpioSettings class.
+- Updated ModbusSettings to support two separate device addresses (one for inputs, one for outputs).
+- Added a new OutputChannelSettings class to map logical device names to the 0-indexed coil addresses on the USR-IO8000 module.
 """
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Dict
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,30 +48,33 @@ class UsbCameraSettings(BaseCameraSettings):
     AUTOFOCUS: bool = True
     WHITE_BALANCE_TEMP: int = 0
 
-class GpioSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='GPIO_', case_sensitive=False)
-    PIN_CONVEYOR_RELAY: int = 26
-    PIN_GATE_RELAY: int = 22
-    PIN_STATUS_LED_GREEN: int = 27
-    PIN_STATUS_LED_RED: int = 23
-    PIN_BUZZER: int = 24
-    # --- NEW: GPIO Pin for the sorting mechanism ---
-    PIN_DIVERTER_RELAY: int = 19
+# --- NEW: Maps logical output names to Modbus coil addresses on the USR-IO8000 ---
+# Based on the user's .env file which previously used GPIO pins.
+# We map them to coil addresses 0 through 5 (for terminals RO1-RO6).
+class OutputChannelSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='OUTPUTS_', case_sensitive=False)
+    CONVEYOR: int = 0
+    GATE: int = 1
+    DIVERTER: int = 2
+    LED_GREEN: int = 3
+    LED_RED: int = 4
+    BUZZER: int = 5
 
 class ModbusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
     PORT: str = "/dev/ttyUSB0"
     BAUDRATE: int = 9600
-    DEVICE_ADDRESS: int = 1
-    START_ADDRESS: int = 1
-    TIMEOUT_SEC: float = 0.2
+    # --- NEW: Explicit addresses for the two modules ---
+    DEVICE_ADDRESS_INPUTS: int = 1   # Address of the USR-IO4040
+    DEVICE_ADDRESS_OUTPUTS: int = 2  # Address of the USR-IO8000
+    TIMEOUT_SEC: float = 0.5
     POLLING_MS: int = 50
-    QUANTITY: int = 4
 
 class SensorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SENSORS_', case_sensitive=False)
+    # Corrected based on user's .env file
     ENTRY_CHANNEL: int = 1
-    EXIT_CHANNEL: int = 2
+    EXIT_CHANNEL: int = 3
 
 class OrchestrationSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='ORCHESTRATION_', case_sensitive=False)
@@ -82,15 +87,17 @@ class LoggingSettings(BaseSettings):
 class ConveyorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
     SPEED_M_PER_SEC: float = 0.5
-    CAMERA_TO_SORTER_DISTANCE_M: float = 1.2
+    # This was missing from the user's .env, adding a default
+    CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
 
 # --- Main AppSettings Container ---
 
 class AppSettings(BaseSettings):
+    # Ignore extra fields like GPIO_PIN_* from the .env file
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "5.1.0-Profiles-Integration"
+    PROJECT_VERSION: str = "7.0.0-Dual-Modbus-IO"
     APP_ENV: Literal["development", "production"] = "development"
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
@@ -104,7 +111,7 @@ class AppSettings(BaseSettings):
     SERVER: ServerSettings = ServerSettings()
     SECURITY: SecuritySettings = SecuritySettings()
     DATABASE: DatabaseSettings = DatabaseSettings()
-    GPIO: GpioSettings = GpioSettings()
+    OUTPUTS: OutputChannelSettings = OutputChannelSettings() # NEW
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()
     ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()

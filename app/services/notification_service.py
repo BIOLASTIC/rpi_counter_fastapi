@@ -1,12 +1,14 @@
 """
-REVISED: The notification service now also writes all alerts to the
-EventLog table in the database for persistent logging.
+REVISED: The notification service is now simplified and has no direct hardware control.
+- The `gpio_controller` dependency has been completely removed.
+- Its only responsibilities are printing alerts and logging them to the database.
 """
 import asyncio
 from enum import Enum
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
-from app.core.gpio_controller import AsyncGPIOController
+
+# Removed the obsolete import for AsyncGPIOController
 from app.models.event_log import EventLog, EventType
 
 class AlertLevel(Enum):
@@ -21,8 +23,10 @@ class Alert(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 class AsyncNotificationService:
-    def __init__(self, gpio_controller: AsyncGPIOController, db_session_factory):
-        self._gpio = gpio_controller
+    # --- THE FIX IS HERE ---
+    # The `gpio_controller` argument has been removed from the __init__ method.
+    def __init__(self, db_session_factory):
+        # The self._gpio attribute has been removed.
         self._get_db_session = db_session_factory
         self._queue = asyncio.Queue(maxsize=100)
         self._worker_task: Optional[asyncio.Task] = None
@@ -49,18 +53,15 @@ class AsyncNotificationService:
         while True:
             try:
                 alert: Alert = await self._queue.get()
+                # 1. Print to console
                 print(f"Notification: [{alert.level.name}] {alert.message}")
 
-                # Persist the log to the database
+                # 2. Persist the log to the database
                 await self._log_event_to_db(alert)
 
-                # Handle physical notifications (LEDs, buzzer)
-                if alert.level == AlertLevel.INFO:
-                    asyncio.create_task(self._gpio.blink_led("led_green", on_time=0.2, off_time=0.2))
-                elif alert.level == AlertLevel.WARNING:
-                    asyncio.create_task(self._gpio.blink_led("led_red", on_time=0.5, off_time=0.5))
-                elif alert.level >= AlertLevel.ERROR:
-                    asyncio.create_task(self._gpio.blink_led("led_red", on_time=0.1, off_time=0.1))
+                # --- The physical notification logic (blinking LEDs) has been removed ---
+                # This is because this service no longer controls hardware.
+                # The OrchestrationService is now responsible for status lights.
 
                 self._queue.task_done()
             except asyncio.CancelledError:
