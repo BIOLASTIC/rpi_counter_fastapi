@@ -1,78 +1,93 @@
-document.addEventListener('DOMContentLoaded', function () {
-    const galleryCol1 = document.getElementById('gallery-col-1');
-    const galleryCol2 = document.getElementById('gallery-col-2');
+/**
+ * Reusable gallery logic for fetching and displaying captured images.
+ * It supports infinite scrolling to load more images as the user scrolls down.
+ */
+
+// A variable to keep track of the current page for a given camera
+const galleryState = {
+    page: 1,
+    isLoading: false,
+    hasMore: true,
+};
+
+/**
+ * Fetches a page of images from the API.
+ * @param {string} cameraId - The ID of the camera to fetch images for (e.g., 'rpi', 'usb').
+ */
+async function fetchImages(cameraId) {
+    if (galleryState.isLoading || !galleryState.hasMore) {
+        return; // Don't fetch if already loading or no more images
+    }
+
+    galleryState.isLoading = true;
     const loader = document.getElementById('loader');
+    loader.style.display = 'block';
 
-    let currentPage = 1;
-    let isLoading = false;
-    let hasMoreImages = true;
+    try {
+        const response = await fetch(`/api/v1/camera/captures/${cameraId}?page=${galleryState.page}&page_size=10`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
 
-    async function fetchImages(page) {
-        if (isLoading || !hasMoreImages) return;
-        isLoading = true;
-        loader.style.display = 'block';
+        displayImages(data.images);
+        galleryState.hasMore = data.has_more;
+        galleryState.page += 1; // Increment page for the next fetch
 
-        try {
-            const response = await fetch(`/api/v1/camera/captures?page=${page}&page_size=8`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            
-            appendImages(data.images);
-            hasMoreImages = data.has_more;
-            currentPage++;
+        if (!galleryState.hasMore) {
+            loader.innerHTML = '<p class="text-muted">No more images to load.</p>';
+        }
 
-            if (!hasMoreImages) {
-                loader.style.display = 'none';
-            }
-
-        } catch (error) {
-            console.error("Failed to fetch images:", error);
-            loader.style.display = 'none';
-        } finally {
-            isLoading = false;
+    } catch (error) {
+        console.error('Failed to fetch images:', error);
+        loader.innerHTML = `<p class="text-danger">Error loading images: ${error.message}</p>`;
+    } finally {
+        galleryState.isLoading = false;
+        if (galleryState.hasMore) {
+             loader.style.display = 'none';
         }
     }
+}
 
-    function appendImages(images) {
-        images.forEach((imagePath, index) => {
-            const galleryItem = document.createElement('a');
-            galleryItem.href = imagePath;
-            galleryItem.target = '_blank';
-            galleryItem.className = 'gallery-item';
+/**
+ * Appends images to the DOM, distributing them between two columns.
+ * @param {string[]} imageUrls - An array of image URLs to display.
+ */
+function displayImages(imageUrls) {
+    const col1 = document.getElementById('gallery-col-1');
+    const col2 = document.getElementById('gallery-col-2');
 
-            const img = document.createElement('img');
-            img.src = imagePath;
-            img.alt = `Capture ${imagePath.split('/').pop()}`;
-            img.loading = 'lazy'; // Native browser lazy loading
+    imageUrls.forEach((url, index) => {
+        const galleryItem = document.createElement('div');
+        galleryItem.className = 'gallery-item';
+        galleryItem.innerHTML = `
+            <a href="${url}" target="_blank" rel="noopener noreferrer">
+                <img src="${url}" alt="Captured image" loading="lazy">
+            </a>
+        `;
 
-            galleryItem.appendChild(img);
-
-            // Distribute images between the two columns
-            if (index % 2 === 0) {
-                galleryCol1.appendChild(galleryItem);
-            } else {
-                galleryCol2.appendChild(galleryItem);
-            }
-        });
-    }
-
-    // --- Intersection Observer for infinite scroll ---
-    const observer = new IntersectionObserver((entries) => {
-        // If the loader is visible in the viewport, fetch more images
-        if (entries[0].isIntersecting) {
-            fetchImages(currentPage);
+        // Distribute images between the two columns
+        if (index % 2 === 0) {
+            col1.appendChild(galleryItem);
+        } else {
+            col2.appendChild(galleryItem);
         }
-    }, {
-        root: null, // relative to the viewport
-        rootMargin: '0px',
-        threshold: 0.1 // trigger when 10% of the loader is visible
     });
+}
 
-    // Start observing the loader
-    observer.observe(loader);
+/**
+ * Initializes the gallery, sets up the scroll listener, and performs the first fetch.
+ * @param {string} cameraId - The ID of the camera for this gallery page.
+ */
+export function initializeGallery(cameraId) {
+    // Initial fetch
+    fetchImages(cameraId);
 
-    // Initial load
-    fetchImages(currentPage);
-});
+    // Infinite scroll listener
+    window.addEventListener('scroll', () => {
+        // If user has scrolled to the bottom of the page
+        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
+            fetchImages(cameraId);
+        }
+    });
+}

@@ -30,15 +30,15 @@
 </style>
 
 <div class="container">
-    <h1 class="mb-4">Image Gallery (USB)</h1>
-    <p class="text-muted">Captured images from the USB camera, newest first.</p>
+    <h1 class="mb-4">Image Gallery (RPI)</h1>
+    <p class="text-muted">Captured images from the RPI camera, newest first.</p>
 
     <div class="gallery-container">
         <div class="gallery-column" id="gallery-col-1"></div>
         <div class="gallery-column" id="gallery-col-2"></div>
     </div>
 
-    <div id="loader">
+     <div id="loader">
         <div class="spinner-border" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -47,5 +47,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/gallery_usb.js"></script>
+<script type="module" src="/static/js/gallery_rpi.js"></script>
 {% endblock %}

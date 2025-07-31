@@ -38,7 +38,7 @@ class AsyncModbusController:
             )
             self.initialized = True
             self.health_status = ModbusHealthStatus.DISCONNECTED
-            self._is_connected = False # Internal state tracking
+            self._is_connected = False
             self._output_name_to_address_map = settings.OUTPUTS.model_dump()
             self._output_address_to_name_map = {v: k for k, v in self._output_name_to_address_map.items()}
             print("--- Modbus Controller Initialized ---")
@@ -54,14 +54,9 @@ class AsyncModbusController:
         return self._output_name_to_address_map.get(name.lower())
 
     async def connect(self) -> bool:
-        # --- THE FIX IS HERE (Part 1) ---
-        # The incorrect 'is_socket_open()' method is removed.
-        # We now rely on our internal state flag.
         if self._is_connected:
             return True
-
         try:
-            # The `connect()` method itself tells us if it was successful.
             is_connected = await self.client.connect()
             if is_connected:
                 print("Modbus Controller: Successfully connected to serial port.")
@@ -69,7 +64,6 @@ class AsyncModbusController:
                 self._is_connected = True
                 return True
             else:
-                # This case handles when connect() returns False without an exception
                 print("Modbus Controller: Failed to connect to serial port.")
                 self.health_status = ModbusHealthStatus.DISCONNECTED
                 self._is_connected = False
@@ -81,9 +75,6 @@ class AsyncModbusController:
             return False
 
     async def disconnect(self):
-        # --- THE FIX IS HERE (Part 2) ---
-        # The incorrect 'is_socket_open()' is removed.
-        # We simply close if our internal state says we are connected.
         if self._is_connected:
             self.client.close()
             self._is_connected = False
@@ -98,7 +89,16 @@ class AsyncModbusController:
                 address=0, count=4, slave=self._config.DEVICE_ADDRESS_INPUTS
             )
             if result.isError(): raise ModbusIOException(f"Modbus error on input read: {result}")
-            return result.bits[:4]
+            
+            # --- THE BUG FIX IS HERE ---
+            # The library might return a list shorter than 4. We must pad it.
+            # The default state for an NPN sensor input is HIGH (True).
+            bits = result.bits
+            while len(bits) < 4:
+                bits.append(True)
+            return bits[:4]
+            # --- END OF FIX ---
+
         except (ConnectionException, ModbusIOException, asyncio.TimeoutError) as e:
             print(f"Modbus read_digital_inputs failed: {e}")
             self.health_status = ModbusHealthStatus.ERROR
@@ -113,7 +113,15 @@ class AsyncModbusController:
                 address=0, count=8, slave=self._config.DEVICE_ADDRESS_OUTPUTS
             )
             if result.isError(): raise ModbusIOException(f"Modbus error on coil read: {result}")
-            return result.bits[:8]
+
+            # --- APPLYING THE SAME FIX FOR ROBUSTNESS ---
+            # The default state for an output coil is OFF (False).
+            bits = result.bits
+            while len(bits) < 8:
+                bits.append(False)
+            return bits[:8]
+            # --- END OF FIX ---
+
         except (ConnectionException, ModbusIOException, asyncio.TimeoutError) as e:
             print(f"Modbus read_coils failed: {e}")
             self.health_status = ModbusHealthStatus.ERROR
