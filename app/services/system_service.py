@@ -8,6 +8,7 @@ hardware services.
 - The structure of the status payload sent to the frontend is preserved to
   ensure UI compatibility.
 - ADDED: Safety checks to prevent IndexError from invalid .env sensor channel config.
+- ADDED: In-flight object count from the detection service.
 """
 import asyncio
 import time
@@ -73,15 +74,12 @@ class AsyncSystemService:
             input_states = self._poller.get_current_input_states()
             output_states = self._poller.get_current_output_states()
 
-            # --- THE FIX IS HERE ---
-            # Added safety checks to gracefully handle invalid channel numbers in .env
             def get_input_state(channel: int) -> bool:
                 """Safely gets the raw boolean state for a 1-based channel number."""
                 index = channel - 1
                 if 0 <= index < len(input_states):
                     return input_states[index]
-                # Default to a safe, non-triggered state if config is invalid
-                return True # Raw True = Not Triggered for NPN
+                return True 
 
             sensor1_raw = get_input_state(self._sensor_config.ENTRY_CHANNEL)
             sensor2_raw = get_input_state(self._sensor_config.EXIT_CHANNEL)
@@ -101,14 +99,16 @@ class AsyncSystemService:
                 "uptime_seconds": int(time.monotonic() - self._app_start_time),
                 "camera_statuses": camera_statuses_payload,
                 "io_module_status": io_module_status,
-                "sensor_1_status": not sensor1_raw, # NPN Inversion (raw False = UI True)
-                "sensor_2_status": not sensor2_raw, # NPN Inversion
+                "sensor_1_status": not sensor1_raw, 
+                "sensor_2_status": not sensor2_raw, 
                 "conveyor_relay_status": get_output_state("conveyor"),
                 "gate_relay_status": get_output_state("gate"),
                 "diverter_relay_status": get_output_state("diverter"),
                 "led_green_status": get_output_state("led_green"),
                 "led_red_status": get_output_state("led_red"),
                 "buzzer_status": get_output_state("buzzer"),
+                # --- NEW: Include the in-flight count in the status payload ---
+                "in_flight_count": self._detection_service.get_in_flight_count(),
             }
         except Exception as e:
             print(f"FATAL ERROR in get_system_status: {e}")

@@ -7,6 +7,7 @@ GPIO controller. All original features and logic have been preserved.
 - It now controls outputs by writing to Modbus coil addresses.
 - It retrieves the mapping of logical names (e.g., 'conveyor') to coil addresses
   from the global settings object.
+- ADDED: Logic to track target count for a batch run.
 """
 import asyncio
 from enum import Enum
@@ -18,7 +19,6 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 import redis.asyncio as redis
 
-# MODIFIED: Import the new Modbus controller and global settings
 from app.core.modbus_controller import AsyncModbusController
 from app.models.profiles import ObjectProfile
 from config import settings
@@ -30,6 +30,7 @@ class OperatingMode(str, Enum):
     IDLE = "Idle (Profile Loaded)"
     RUNNING = "Running"
     PAUSED = "Paused"
+    COMPLETE = "Complete" # NEW: State for when a batch finishes
 
 
 class AsyncOrchestrationService:
@@ -39,52 +40,33 @@ class AsyncOrchestrationService:
     """
     def __init__(
         self,
-        modbus_controller: AsyncModbusController,  # MODIFIED: Dependency changed from GPIO to Modbus
+        modbus_controller: AsyncModbusController,
         db_session_factory,
         redis_client: redis.Redis
     ):
-        """
-        Initializes the orchestration service.
-
-        Args:
-            modbus_controller: The instance for controlling hardware via Modbus.
-            db_session_factory: The factory for creating database sessions.
-            redis_client: The client for communicating with Redis.
-        """
-        self._io = modbus_controller  # MODIFIED: Internal variable now refers to the Modbus IO controller
+        self._io = modbus_controller
         self._get_db_session = db_session_factory
         self._redis = redis_client
         self._mode = OperatingMode.STOPPED
         self._active_profile: Optional[ObjectProfile] = None
         self._current_count = 0
+        self._target_count = 0 # NEW: Attribute for batch size
         self._lock = asyncio.Lock()
-        # NEW: Store the output-to-coil-address mapping from settings
         self._output_map = settings.OUTPUTS
 
     async def initialize_hardware_state(self):
-        """
-        Sets all Modbus outputs to a safe, default 'off' state.
-        This is a critical safety feature for application startup.
-        FEATURE PRESERVED.
-        """
+        """Sets all Modbus outputs to a safe, default 'off' state."""
         print("Orchestrator: Setting initial hardware state to STOPPED.")
-        # MODIFIED: Use write_coil with mapped addresses instead of GPIO calls
         await self._io.write_coil(self._output_map.GATE, False)
         await self._io.write_coil(self._output_map.DIVERTER, False)
         await self._io.write_coil(self._output_map.CONVEYOR, False)
         await self._io.write_coil(self._output_map.LED_GREEN, False)
-        # Turn on the red 'stopped' LED to indicate the system is halted.
         await self._io.write_coil(self._output_map.LED_RED, True)
 
     async def load_and_set_active_profile(self, profile_id: int) -> bool:
-        """
-        Loads a profile from the database and commands the camera service via Redis
-        to apply the associated camera settings.
-        FEATURE PRESERVED. This method's logic did not need to change.
-        """
+        """Loads a profile from the database and commands the camera."""
         async with self._lock:
             async with self._get_db_session() as session:
-                # Use selectinload to efficiently fetch the ObjectProfile AND its related CameraProfile
                 result = await session.execute(
                     select(ObjectProfile)
                     .options(selectinload(ObjectProfile.camera_profile))
@@ -93,14 +75,12 @@ class AsyncOrchestrationService:
                 profile = result.scalar_one_or_none()
 
             if not profile or not profile.camera_profile:
-                print(f"Orchestrator Error: Profile with ID {profile_id} or its linked camera profile not found.")
                 return False
 
             self._active_profile = profile
             self._mode = OperatingMode.IDLE
             print(f"Orchestrator: Loaded Active Profile -> '{profile.name}' from DATABASE.")
 
-            # Construct the command using the data from the linked camera profile
             cam_profile = self._active_profile.camera_profile
             command = {
                 "action": "apply_settings",
@@ -112,49 +92,51 @@ class AsyncOrchestrationService:
                     "brightness": cam_profile.brightness,
                 }
             }
-            # Publish the specific settings to the camera service
             await self._redis.publish("camera:commands:usb", json.dumps(command))
             print(f"Orchestrator: Commanded camera to apply settings for '{cam_profile.name}'.")
             return True
 
     def get_active_profile(self) -> Optional[ObjectProfile]:
-        """
-        Returns the currently loaded ObjectProfile instance.
-        FEATURE PRESERVED.
-        """
+        """Returns the currently loaded ObjectProfile instance."""
         return self._active_profile
 
     def on_box_processed(self):
-        """
-        Callback for the detection service to increment the run counter.
-        FEATURE PRESERVED.
-        """
+        """Callback for the detection service to increment the run counter."""
         if self._mode == OperatingMode.RUNNING:
             self._current_count += 1
+            # NEW: Check if the batch is complete
+            if self._target_count > 0 and self._current_count >= self._target_count:
+                print("Orchestrator: Target count reached. Completing run.")
+                asyncio.create_task(self.complete_run())
 
-    async def start_run(self):
-        """
-        Starts a production run, commanding hardware to its 'running' state.
-        FEATURE PRESERVED.
-        """
+
+    async def start_run(self, target_count: int = 0):
+        """Starts a production run, commanding hardware to its 'running' state."""
         async with self._lock:
-            if self._mode not in [OperatingMode.IDLE, OperatingMode.PAUSED]:
+            # A run can only start if a profile is loaded
+            if self._mode not in [OperatingMode.IDLE, OperatingMode.PAUSED, OperatingMode.COMPLETE]:
                 return
 
-            print("Orchestrator: Starting production run.")
-            self._current_count = 0 # Reset count at the start of a run
+            print(f"Orchestrator: Starting production run. Target: {target_count if target_count > 0 else 'Unlimited'}")
+            self._current_count = 0 
+            self._target_count = target_count
             self._mode = OperatingMode.RUNNING
 
-            # MODIFIED: Use write_coil to set the 'running' hardware state
             await self._io.write_coil(self._output_map.LED_RED, False)
             await self._io.write_coil(self._output_map.LED_GREEN, True)
             await self._io.write_coil(self._output_map.CONVEYOR, True)
+            
+    # --- NEW: Method to handle batch completion gracefully ---
+    async def complete_run(self):
+        """Sequence for when a batch target is met."""
+        async with self._lock:
+            self._mode = OperatingMode.COMPLETE
+            # Stop the conveyor but keep the green light on to show success
+            await self._io.write_coil(self._output_map.CONVEYOR, False)
+            print("Orchestrator: Run complete. Conveyor stopped.")
 
     async def stop_run(self):
-        """
-        Stops all operations, unloads the profile, and returns hardware to its safe 'stopped' state.
-        FEATURE PRESERVED.
-        """
+        """Stops all operations, unloads profile, returns hardware to safe state."""
         async with self._lock:
             if self._mode == OperatingMode.STOPPED:
                 return
@@ -163,17 +145,15 @@ class AsyncOrchestrationService:
             self._mode = OperatingMode.STOPPED
             self._active_profile = None
             self._current_count = 0
-            # MODIFIED: Call the dedicated method to return hardware to a safe state
+            self._target_count = 0
             await self.initialize_hardware_state()
 
     def get_status(self) -> dict:
-        """
-        Gets the current status of the orchestration service for UI and API polling.
-        FEATURE PRESERVED.
-        """
+        """Gets the current status of the orchestration service for UI and API polling."""
         profile_name = self._active_profile.name if self._active_profile else "None"
         return {
             "mode": self._mode.value,
             "active_profile": profile_name,
             "run_progress": self._current_count,
+            "target_count": self._target_count, # NEW: Send target count
         }

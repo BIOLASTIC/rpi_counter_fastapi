@@ -10,6 +10,11 @@
         <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
             <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
+                <!-- MODIFIED: Added a new info box for in-flight count -->
+                <div class="info-box">
+                    <span class="info-label"><i class="bi bi-arrows-expand"></i> ON BELT</span>
+                    <span class="info-value" id="count-on-belt">0</span>
+                </div>
                 <div class="info-box on-belt">
                     <span class="info-label"><i class="bi bi-box-seam"></i> PROCESSED THIS RUN</span>
                     <span class="info-value" id="count-exited">0</span>
@@ -25,6 +30,7 @@
                 </svg>
                 <div class="progress-text">
                     <div id="progress-percentage">0%</div>
+                    <!-- This element will now show X / Y -->
                     <div id="progress-details">IDLE</div>
                 </div>
             </div>
@@ -37,22 +43,16 @@
     <div id="live-feeds-container" class="dashboard-zone">
         <h5 class="zone-title"><i class="bi bi-camera-video-fill"></i> Live Feeds</h5>
         <div class="feeds-grid">
-            
-            <!-- Feed 1: The original, full-speed USB camera feed -->
             <div class="camera-feed-container" id="feed-container-usb">
                 <div class="camera-title">USB CAM (RAW - 30 FPS)</div>
                 <img id="live-camera-feed-usb" src="/api/v1/camera/stream/usb" alt="Live feed for camera usb">
                 <div id="camera-offline-overlay-usb" class="camera-offline-overlay hidden"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
             </div>
-
-            <!-- Feed 2: The NEW AI-processed feed at a lower framerate -->
             <div class="camera-feed-container" id="feed-container-ai">
                 <div class="camera-title">AI DETECTION (CPU - ~8 FPS)</div>
-                <!-- THE FIX IS HERE: Corrected the src URL to include the /camera prefix -->
                 <img id="live-ai-feed-usb" src="/api/v1/camera/ai_stream/usb" alt="Live AI feed for camera usb">
                 <div id="ai-offline-overlay-usb" class="camera-offline-overlay"><i class="bi bi-robot"></i><span>Connecting...</span></div>
             </div>
-
         </div>
     </div>
 
@@ -76,11 +76,12 @@
     <div id="control-zone" class="dashboard-zone">
          <h5 class="zone-title"><i class="bi bi-toggles"></i> Production Run Control</h5>
          <div class="alert alert-info">
-             <strong>Step 1:</strong> Select an Object Profile (Recipe). <br>
+             <strong>Step 1:</strong> Select a Profile and set a Target Count. <br>
              <strong>Step 2:</strong> Click "Load & Start Run". The camera will be configured automatically.
          </div>
+        <!-- MODIFIED: Row layout updated for the new input -->
         <div class="row align-items-end g-3">
-            <div class="col-lg-5">
+            <div class="col-lg-5 col-md-6">
                 <label for="object-profile-select" class="form-label"><strong>Object Profile (Recipe)</strong></label>
                 <select id="object-profile-select" class="form-select form-select-lg">
                     <option value="">-- Select a Recipe --</option>
@@ -89,11 +90,16 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-lg-7">
+            <!-- NEW: Target Count input field -->
+            <div class="col-lg-2 col-md-6">
+                <label for="target-count-input" class="form-label"><strong>Target Count</strong></label>
+                <input type="number" class="form-control form-control-lg" id="target-count-input" value="10" min="0">
+            </div>
+            <div class="col-lg-5">
                  <div class="d-grid gap-2 d-md-flex">
                     <button class="btn btn-success btn-lg flex-grow-1" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
                     <button class="btn btn-danger btn-lg flex-grow-1" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
-                    <button class="btn btn-outline-warning btn-lg" id="reset-all-btn" title="Reset all counts to zero and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                    <button class="btn btn-outline-warning btn-lg" id="reset-all-btn" title="Reset all counts and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
                  </div>
             </div>
         </div>
@@ -102,5 +108,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v2.js"></script>
+<script src="/static/js/dashboard_v2.js?v=1.1"></script>
 {% endblock %}

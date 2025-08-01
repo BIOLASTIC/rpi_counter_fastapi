@@ -6,6 +6,7 @@ AsyncModbusController for its hardware interactions.
 - It now controls the diverter output by writing to a Modbus coil address.
 - All other features, including the state machine, object tracking, and QC checks,
   are preserved.
+- ADDED: Method to expose the number of in-flight objects.
 """
 import asyncio
 import time
@@ -55,6 +56,11 @@ class AsyncDetectionService:
             self._base_travel_time_sec = self._conveyor_config.CAMERA_TO_SORTER_DISTANCE_M / self._conveyor_config.SPEED_M_PER_SEC
 
         print(f"Detection Service: Calculated base travel time of {self._base_travel_time_sec:.2f} seconds.")
+
+    # --- NEW: Method to get the current number of objects being tracked ---
+    def get_in_flight_count(self) -> int:
+        """Returns the number of objects currently tracked on the conveyor."""
+        return len(self._in_flight_objects)
 
     async def _mock_ai_qc_check(self, image_path: str) -> str:
         """

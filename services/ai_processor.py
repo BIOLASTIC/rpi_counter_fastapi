@@ -1,16 +1,18 @@
 """
-Standalone AI Processing Service - FINAL, CORRECTED VERSION
+Standalone AI Processing Service - FINAL PRODUCTION VERSION (v3)
 
-This version fixes the Redis "Connection closed by server" error. It replaces
-the blocking `pubsub.listen()` generator with a robust, non-blocking
-`pubsub.get_message()` loop. This is the definitive, stable architecture.
+This version uses a robust message-draining loop to solve the "slow consumer"
+problem. When the service starts, it discards any backlog of frames and only
+processes the most recent one, preventing the Redis output buffer from
+overflowing and causing a disconnect. This is the definitive solution.
 """
 import cv2
 import numpy as np
-import time
-import redis
+import redis.asyncio as redis
+import asyncio
 import traceback
 import onnxruntime as ort
+from redis.exceptions import ConnectionError, TimeoutError
 
 # --- Configuration ---
 REDIS_HOST = 'localhost'
@@ -34,85 +36,95 @@ COCO_CLASSES = [
 ]
 TARGET_CLASSES = {'bottle', 'cup', 'cell phone', 'book', 'box'}
 
-def main():
-    print("--- Starting Standalone AI Processor Service (ONNX Runtime) ---")
-    
+def process_frame_sync(frame_data, session, model_width, model_height):
+    """Synchronous, CPU-bound function to process a single image frame."""
+    np_array = np.frombuffer(frame_data, np.uint8)
+    image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+    if image is None: return None
+    original_height, original_width, _ = image.shape
+    input_image = cv2.resize(image, (model_width, model_height))
+    input_image = input_image.transpose(2, 0, 1)
+    input_data = np.expand_dims(input_image, axis=0).astype(np.float32) / 255.0
+    outputs = session.run(None, {session.get_inputs()[0].name: input_data})
+    output_data = outputs[0][0].T
+    for row in output_data:
+        confidence = row[4:].max()
+        if confidence < CONFIDENCE_THRESHOLD: continue
+        class_id = int(row[4:].argmax())
+        label = COCO_CLASSES[class_id]
+        if label not in TARGET_CLASSES: continue
+        xc, yc, w, h = row[:4]
+        x1 = int((xc - w / 2) * original_width / model_width)
+        y1 = int((yc - h / 2) * original_height / model_height)
+        x2 = int((xc + w / 2) * original_width / model_width)
+        y2 = int((yc + h / 2) * original_height / model_height)
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image, f"{label} {confidence:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    return buffer.tobytes()
+
+async def main():
+    print("--- Starting Standalone AI Processor Service (PRODUCTION v3) ---")
     try:
         session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
         input_details = session.get_inputs()[0]
-        model_height = input_details.shape[2]
-        model_width = input_details.shape[3]
+        model_height, model_width = input_details.shape[2], input_details.shape[3]
         print(f"   ✅ ONNX Model Loaded. Input: {model_width}x{model_height}")
     except Exception as e:
-        print(f"❌ FATAL ERROR: Could not load ONNX model. Ensure '{MODEL_PATH}' is in the project root.")
-        print(f"Error: {e}")
+        print(f"❌ FATAL ERROR: Could not load ONNX model: {e}")
         return
 
-    try:
-        redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
-        pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
-        pubsub.subscribe(INPUT_FRAME_CHANNEL)
-        print(f"✅ Redis connection successful. Subscribed to '{INPUT_FRAME_CHANNEL}'.")
-    except Exception as e:
-        print(f"❌ FATAL ERROR: Could not connect to Redis.")
-        print(f"Error: {e}")
-        return
-
-    print("\n🚀 AI Processor is running. Waiting for frames...")
-    
-    # --- THE FINAL BUG FIX IS HERE ---
-    # We now use a robust `while True` loop with a non-blocking `get_message()` call.
-    # This prevents the Redis connection from timing out during heavy AI processing.
     while True:
+        redis_client = None
+        exit_reason = None
         try:
-            message = pubsub.get_message()
-            if not message:
-                time.sleep(0.001)  # Sleep briefly to prevent high CPU usage when idle
-                continue
-
-            frame_data = message['data']
+            print("Connecting to Redis...")
+            redis_client = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", health_check_interval=30)
+            await redis_client.ping()
+            print("✅ Redis connection successful.")
             
-            # The rest of the logic remains the same
-            np_array = np.frombuffer(frame_data, np.uint8)
-            image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
-            if image is None: continue
-
-            original_height, original_width, _ = image.shape
-            
-            input_image = cv2.resize(image, (model_width, model_height))
-            input_image = input_image.transpose(2, 0, 1)
-            input_data = np.expand_dims(input_image, axis=0).astype(np.float32) / 255.0
-
-            outputs = session.run(None, {input_details.name: input_data})
-            
-            output_data = outputs[0][0].T
-            for row in output_data:
-                confidence = row[4:].max()
-                if confidence < CONFIDENCE_THRESHOLD: continue
-                class_id = int(row[4:].argmax())
-                label = COCO_CLASSES[class_id]
-                if label not in TARGET_CLASSES: continue
+            async with redis_client.pubsub() as pubsub:
+                await pubsub.subscribe(INPUT_FRAME_CHANNEL)
+                print(f"✅ Subscribed to '{INPUT_FRAME_CHANNEL}'. Starting processing loop...")
                 
-                xc, yc, w, h = row[:4]
-                x1 = int((xc - w / 2) * original_width / model_width)
-                y1 = int((yc - h / 2) * original_height / model_height)
-                x2 = int((xc + w / 2) * original_width / model_width)
-                y2 = int((yc + h / 2) * original_height / model_height)
-                
-                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(image, f"{label} {confidence:.2f}", (x1, y1 - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                while True:
+                    # Wait until we get at least one message
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=20.0)
+                    if not message: continue
 
-            _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 90])
-            redis_client.publish(OUTPUT_STREAM_CHANNEL, buffer.tobytes())
+                    # THE FIX: Drain the queue to get the most recent frame
+                    while True:
+                        latest_message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.001)
+                        if latest_message is None:
+                            break
+                        message = latest_message
+                    
+                    # Process the single, most-recent frame in a separate thread
+                    processed_buffer = await asyncio.to_thread(
+                        process_frame_sync, message['data'], session, model_width, model_height
+                    )
 
-        except KeyboardInterrupt:
+                    if processed_buffer:
+                        await redis_client.publish(OUTPUT_STREAM_CHANNEL, processed_buffer)
+
+        except (ConnectionError, TimeoutError) as e:
+            exit_reason = e
+            print(f"❌ Redis connection error: {e}. Reconnecting in 5 seconds...")
+        except KeyboardInterrupt as e:
+            exit_reason = e
             print("\nExiting AI Processor...")
             break
         except Exception as e:
+            exit_reason = e
             print(f"- CRITICAL ERROR in AI processing loop: {e}")
             traceback.print_exc()
-            time.sleep(2)
+        finally:
+            if redis_client: await redis_client.aclose()
+            if isinstance(exit_reason, KeyboardInterrupt): break
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Program terminated manually.")

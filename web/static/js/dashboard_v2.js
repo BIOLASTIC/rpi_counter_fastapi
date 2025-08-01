@@ -1,203 +1,190 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- WebSocket Setup ---
+document.addEventListener('DOMContentLoaded', function () {
     const WEBSOCKET_URL = `ws://${window.location.host}/ws`;
-    let socket;
+    let ws;
 
-    function connect() {
-        socket = new WebSocket(WEBSOCKET_URL);
-        socket.onopen = () => console.log('WebSocket connection established.');
-        socket.onmessage = handleWebSocketMessage;
-        socket.onclose = () => {
-            console.log('WebSocket connection closed. Reconnecting...');
-            setTimeout(connect, 2000);
-        };
-        socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            socket.close();
-        };
-    }
-
-    // --- DOM Element Cache ---
+    // --- Element Cache ---
     const elements = {
-        // Run Status
-        systemMode: document.getElementById('system-mode'),
-        activeProfileDisplay: document.getElementById('active-profile-display'),
         conveyorBelt: document.getElementById('conveyor-belt'),
-        // Counts & Progress
+        countOnBelt: document.getElementById('count-on-belt'),
         countExited: document.getElementById('count-exited'),
-        progressCirclePath: document.querySelector('.progress-circle__path'),
+        progressCircle: document.querySelector('.progress-circle__path'),
         progressPercentage: document.getElementById('progress-percentage'),
         progressDetails: document.getElementById('progress-details'),
-        // Controls
-        profileSelect: document.getElementById('object-profile-select'),
+        systemMode: document.getElementById('system-mode'),
+        activeProfileDisplay: document.getElementById('active-profile-display'),
         startRunBtn: document.getElementById('start-run-btn'),
         stopRunBtn: document.getElementById('stop-run-btn'),
         resetAllBtn: document.getElementById('reset-all-btn'),
-        // Dynamic Elements
-        cameraFeeds: {},
-        cameraOfflineOverlays: {},
-        cameraStatusBadges: {},
-        // Hardware Status Grid
-        statusSensor1: document.getElementById('status-sensor-1'),
-        statusSensor2: document.getElementById('status-sensor-2'),
-        statusConveyorRelay: document.getElementById('status-conveyor-relay'),
-        statusGateRelay: document.getElementById('status-gate-relay'),
-        statusDiverterRelay: document.getElementById('status-diverter-relay'),
-        statusGpio: document.getElementById('status-gpio'),
-        statusIoModule: document.getElementById('status-io-module'),
+        objectProfileSelect: document.getElementById('object-profile-select'),
+        targetCountInput: document.getElementById('target-count-input'), // NEW
     };
-    
-    // Dynamically cache camera elements
-    document.querySelectorAll('[id^="live-camera-feed-"]').forEach(el => {
-        const camId = el.id.replace('live-camera-feed-', '');
-        elements.cameraFeeds[camId] = el;
-        elements.cameraOfflineOverlays[camId] = document.getElementById(`camera-offline-overlay-${camId}`);
-        elements.cameraStatusBadges[camId] = document.querySelector(`#system-status-zone [id="status-camera-${camId}"]`);
-    });
+    const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * 45;
+    elements.progressCircle.style.strokeDasharray = CIRCLE_CIRCUMFERENCE;
 
-    // --- WebSocket Message Handlers ---
+    // --- State ---
+    let lastSystemStatus = {};
+    let lastOrchestrationStatus = {};
 
-    function handleWebSocketMessage(event) {
-        try {
-            const message = JSON.parse(event.data);
-            if (message.type === 'system_status') {
-                handleSystemStatus(message.data);
-            } else if (message.type === 'orchestration_status') {
-                handleOrchestrationStatus(message.data);
-            }
-        } catch (error) {
-            console.error("Error parsing WebSocket message:", error);
-        }
-    }
+    function connectWebSocket() {
+        console.log('Attempting to connect WebSocket...');
+        ws = new WebSocket(WEBSOCKET_URL);
 
-    function handleOrchestrationStatus(data) {
-        if (!data) return;
-        const { mode, active_profile, run_progress } = data;
-
-        updateBadge(elements.systemMode, mode);
-        elements.activeProfileDisplay.textContent = active_profile || 'None';
-        elements.countExited.textContent = run_progress || 0;
-
-        const isRunning = mode === 'Running';
-        elements.conveyorBelt.classList.toggle('running', isRunning);
-        elements.startRunBtn.disabled = isRunning;
-        elements.profileSelect.disabled = isRunning;
-
-        // Update progress circle
-        const circumference = 2 * Math.PI * 45;
-        elements.progressCirclePath.style.strokeDasharray = circumference;
-        if (isRunning) {
-            elements.progressCirclePath.style.strokeDashoffset = 0;
-            elements.progressPercentage.textContent = '100%';
-            elements.progressDetails.textContent = 'RUNNING';
-        } else {
-            elements.progressCirclePath.style.strokeDashoffset = circumference;
-            elements.progressPercentage.textContent = '0%';
-            elements.progressDetails.textContent = mode.toUpperCase();
-        }
-    }
-
-    function handleSystemStatus(data) {
-        if (!data) return;
-        updateBadge(elements.statusSensor1, data.sensor_1_status ? 'TRIGGERED' : 'CLEAR', { true: 'warn', false: 'clear' });
-        updateBadge(elements.statusSensor2, data.sensor_2_status ? 'TRIGGERED' : 'CLEAR', { true: 'warn', false: 'clear' });
-        updateBadge(elements.statusConveyorRelay, data.conveyor_relay_status ? 'ON' : 'OFF', { true: 'on', false: 'off' });
-        updateBadge(elements.statusGateRelay, data.gate_relay_status ? 'ON' : 'OFF', { true: 'on', false: 'off' });
-        updateBadge(elements.statusDiverterRelay, data.diverter_relay_status ? 'ON' : 'OFF', { true: 'on', false: 'off' });
-        updateBadge(elements.statusGpio, data.gpio_status, { 'ok': 'ok' });
-        updateBadge(elements.statusIoModule, data.io_module_status, { 'connected': 'ok' });
-
-        for (const camId in data.camera_statuses) {
-            const status = data.camera_statuses[camId];
-            const isConnected = status === 'connected';
-
-            updateBadge(elements.cameraStatusBadges[camId], status, { 'connected': 'ok' });
-
-            if (elements.cameraFeeds[camId]) {
-                const expectedSrc = isConnected ? `/api/v1/camera/stream/${camId}` : '/static/images/placeholder.jpg';
-                if (!elements.cameraFeeds[camId].src.includes(expectedSrc)) {
-                    elements.cameraFeeds[camId].src = expectedSrc;
+        ws.onopen = () => console.log('WebSocket connection established.');
+        ws.onclose = () => {
+            console.log('WebSocket connection closed. Reconnecting in 3 seconds...');
+            setTimeout(connectWebSocket, 3000);
+        };
+        ws.onerror = (err) => console.error('WebSocket error:', err);
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                switch (message.type) {
+                    case 'system_status':
+                        lastSystemStatus = message.data;
+                        updateSystemStatus(message.data);
+                        break;
+                    case 'orchestration_status':
+                        lastOrchestrationStatus = message.data;
+                        updateOrchestrationStatus(message.data);
+                        break;
                 }
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
             }
-            if (elements.cameraOfflineOverlays[camId]) {
-                elements.cameraOfflineOverlays[camId].classList.toggle('hidden', isConnected);
-            }
-        }
+        };
     }
 
-    // --- UI Helper Functions ---
-    const statusClassMap = {
-        'ok': 'ok', 'on': 'ok', 'connected': 'ok',
-        'error': 'error', 'off': 'error', 'disconnected': 'error',
-        'warn': 'warn', 'triggered': 'warn', 'clear': 'clear',
-    };
-
-    function updateBadge(element, text, classLogic = {}) {
-        if (!element) return;
-        const textContent = (text === true ? 'ON' : (text === false ? 'OFF' : text || '--')).toUpperCase();
-        element.textContent = textContent;
+    // --- UI Update Functions ---
+    function updateSystemStatus(data) {
+        updateBadge('status-sensor-1', data.sensor_1_status, 'TRIGGERED', 'CLEAR');
+        updateBadge('status-sensor-2', data.sensor_2_status, 'TRIGGERED', 'CLEAR');
+        updateBadge('status-conveyor-relay', data.conveyor_relay_status, 'ON', 'OFF');
+        updateBadge('status-gate-relay', data.gate_relay_status, 'ON', 'OFF');
+        updateBadge('status-diverter-relay', data.diverter_relay_status, 'ON', 'OFF');
+        updateBadge('status-io-module', data.io_module_status === 'ok', 'OK', 'ERROR');
         
-        let statusClass = 'clear';
-        if (classLogic[text]) {
-            statusClass = classLogic[text];
-        } else if (statusClassMap[textContent.toLowerCase()]) {
-            statusClass = statusClassMap[textContent.toLowerCase()];
+        // --- NEW: Update in-flight count ---
+        if (elements.countOnBelt) {
+            elements.countOnBelt.textContent = data.in_flight_count ?? 0;
         }
-        
-        element.className = 'status-badge'; // Reset classes
-        element.classList.add(statusClass);
+
+        // Camera statuses
+        Object.keys(data.camera_statuses || {}).forEach(camId => {
+            const status = data.camera_statuses[camId];
+            updateBadge(`status-camera-${camId}`, status === 'connected', 'ONLINE', 'OFFLINE');
+            const overlay = document.getElementById(`camera-offline-overlay-${camId}`);
+            if (overlay) overlay.classList.toggle('hidden', status === 'connected');
+        });
+
+        // Trigger conveyor animation
+        const isRunning = data.conveyor_relay_status;
+        elements.conveyorBelt.classList.toggle('running', isRunning);
     }
     
+    function updateOrchestrationStatus(data) {
+        const { mode, active_profile, run_progress, target_count } = data;
+
+        elements.systemMode.textContent = mode;
+        updateBadgeClass(elements.systemMode, mode);
+        elements.activeProfileDisplay.textContent = active_profile;
+        elements.countExited.textContent = run_progress;
+
+        let percentage = 0;
+        if (target_count > 0) {
+            percentage = Math.min((run_progress / target_count) * 100, 100);
+            elements.progressDetails.textContent = `${run_progress} / ${target_count}`;
+        } else {
+            // If no target, show unlimited mode
+            elements.progressDetails.textContent = "Unlimited";
+            percentage = 0; // Or keep it at 0 for unlimited runs
+        }
+
+        elements.progressPercentage.textContent = `${Math.round(percentage)}%`;
+        const offset = CIRCLE_CIRCUMFERENCE * (1 - percentage / 100);
+        elements.progressCircle.style.strokeDashoffset = offset;
+    }
+
+
+    function updateBadge(elementId, isPositive, positiveText, negativeText) {
+        const el = document.getElementById(elementId);
+        if (el) {
+            const text = isPositive ? positiveText : negativeText;
+            const positiveClass = positiveText.toLowerCase();
+            const negativeClass = negativeText.toLowerCase();
+            el.textContent = text;
+            el.classList.remove('ok', 'on', 'connected', 'triggered', 'error', 'off', 'disconnected', 'clear');
+            el.classList.add(isPositive ? positiveClass : negativeClass);
+        }
+    }
+
+    function updateBadgeClass(element, mode) {
+        element.className = 'status-badge'; // Reset
+        switch (mode) {
+            case 'Running':
+                element.classList.add('ok'); break;
+            case 'Stopped':
+                element.classList.add('error'); break;
+            case 'Idle (Profile Loaded)':
+            case 'Complete':
+                element.classList.add('warn'); break;
+            default:
+                element.classList.add('clear');
+        }
+    }
+
 
     // --- API Call Functions ---
-    async function apiPost(url, body = null) {
+    async function postData(url, data) {
         try {
-            const options = { method: 'POST' };
-            if (body) {
-                options.headers = { 'Content-Type': 'application/json' };
-                options.body = JSON.stringify(body);
-            }
-            const response = await fetch(url, options);
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || response.statusText);
+                throw new Error(error.detail || `HTTP error! status: ${response.status}`);
             }
             return await response.json();
-        } catch (error) {
-            console.error(`Error with POST request to ${url}:`, error);
-            alert(`Error: ${error.message}`);
-            return null;
+        } catch (e) {
+            console.error(`Failed to POST to ${url}:`, e);
+            alert(`Error: ${e.message}`);
         }
     }
+    
+    // --- Event Listeners ---
+    elements.startRunBtn.addEventListener('click', async () => {
+        const profileId = elements.objectProfileSelect.value;
+        const targetCount = parseInt(elements.targetCountInput.value, 10);
 
-    async function setProfileAndStartRun() {
-        const profileId = elements.profileSelect.value;
         if (!profileId) {
-            alert('Please select an object profile (recipe) first.');
+            alert('Please select an Object Profile first.');
             return;
         }
-        const setResult = await apiPost('/api/v1/orchestration/run/set-profile', { object_profile_id: parseInt(profileId) });
-        if (setResult) {
-            await new Promise(resolve => setTimeout(resolve, 250));
-            await apiPost('/api/v1/orchestration/run/start');
+        if (isNaN(targetCount) || targetCount < 0) {
+            alert('Please enter a valid, non-negative Target Count.');
+            return;
         }
-    }
 
-    async function stopRun() {
-        await apiPost('/api/v1/orchestration/run/stop');
-    }
-    
-    async function resetAllState() {
-        if (confirm('Are you sure you want to stop the run and reset all system state?')) {
-            await apiPost('/api/v1/system/reset-all');
+        console.log(`Setting active profile to ID: ${profileId}`);
+        await postData('/api/v1/orchestration/run/set-profile', { object_profile_id: parseInt(profileId) });
+        
+        console.log(`Starting run with target: ${targetCount}`);
+        await postData('/api/v1/orchestration/run/start', { target_count: targetCount });
+    });
+
+    elements.stopRunBtn.addEventListener('click', () => {
+        console.log('Stopping run...');
+        postData('/api/v1/orchestration/run/stop', {});
+    });
+
+    elements.resetAllBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to stop all hardware and reset the state?')) {
+            console.log('Resetting all system state...');
+            postData('/api/v1/system/reset-all', {});
         }
-    }
-    
-    // --- Attach Event Listeners ---
-    elements.startRunBtn?.addEventListener('click', setProfileAndStartRun);
-    elements.stopRunBtn?.addEventListener('click', stopRun);
-    elements.resetAllBtn?.addEventListener('click', resetAllState);
+    });
 
-    // --- Initial Connection ---
-    connect();
+    // --- Initialization ---
+    connectWebSocket();
 });
