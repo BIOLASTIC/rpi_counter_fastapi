@@ -1,55 +1,255 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    :root {
+        --pi-color: #C51A4A;
+        --io-color: #007bff;
+        --device-color: #28a745;
+        --line-color: #6c757d;
+        --status-on-bg: #28a745;
+        --status-on-fg: #fff;
+        --status-off-bg: #dc3545;
+        --status-off-fg: #fff;
+        --bg-color: #f8f9fa;
+        --card-bg: #fff;
+        --text-color: #343a40;
+    }
+
+    .hardware-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.5rem;
+        padding: 2rem 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .device-card {
+        background-color: var(--card-bg);
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        padding: 1rem 1.5rem;
+        text-align: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease-in-out;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .device-card:hover {
+        transform: translateY(-5px);
+    }
+    .device-card h5 {
+        margin-top: 0;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    .device-card .type {
+        font-size: 0.75rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+    .device-card.rpi h5 { color: var(--pi-color); }
+    .device-card.io-device h5 { color: var(--io-color); }
+    .device-card.peripheral h5 { color: var(--device-color); }
+
+    .status-indicator {
+        display: inline-block;
+        padding: 0.35em 0.65em;
+        font-size: .8em;
+        font-weight: 700;
+        line-height: 1;
+        color: var(--status-off-fg);
+        background-color: var(--status-off-bg);
+        border-radius: .25rem;
+        transition: background-color 0.3s;
+        width: 60px;
+        margin: 0 auto;
+    }
+    .status-indicator.active {
+        background-color: var(--status-on-bg);
+    }
+    .io-details {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 60px; height: 34px;
+      margin: 0.5rem auto 0;
+    }
+    .switch input { display:none; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc; transition: .4s; border-radius: 34px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 26px; width: 26px;
+      left: 4px; bottom: 4px; background-color: white;
+      transition: .4s; border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--io-color); }
+    input:checked + .slider:before { transform: translateX(26px); }
+</style>
+
 <div class="container">
-    <h1 class="mb-4">Hardware GPIO Control</h1>
-    
-    <div class="card mb-4">
-        <div class="card-header fs-5"><i class="bi bi-hand-index-thumb-fill"></i> Manual GPIO Control Panel</div>
-        <div class="card-body">
-            <div class="row text-center">
-                <!-- Conveyor -->
-                <div class="col-lg col-md-4 col-6 mb-3">
-                    <h6>Conveyor</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.PIN_CONVEYOR_RELAY }}</p>
-                    <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="conveyor">Toggle</button>
-                    <div class="mt-2">Status: <span class="badge" id="hw-conveyor-relay">--</span></div>
-                </div>
-                <!-- Gate -->
-                <div class="col-lg col-md-4 col-6 mb-3">
-                    <h6>Gate</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.PIN_GATE_RELAY }}</p>
-                    <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="gate">Toggle</button>
-                    <div class="mt-2">Status: <span class="badge" id="hw-gate-relay">--</span></div>
-                </div>
-                <!-- Green LED -->
-                <div class="col-lg col-md-4 col-6 mb-3">
-                    <h6>Green LED</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.PIN_STATUS_LED_GREEN }}</p>
-                    <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="led_green">Toggle</button>
-                    <div class="mt-2">Status: <span class="badge" id="hw-led-green">--</span></div>
-                </div>
-                <!-- Red LED -->
-                <div class="col-lg col-md-6 col-6 mb-3">
-                    <h6>Red LED</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.PIN_STATUS_LED_RED }}</p>
-                    <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="led_red">Toggle</button>
-                    <div class="mt-2">Status: <span class="badge" id="hw-led-red">--</span></div>
-                </div>
-                <!-- Buzzer -->
-                <div class="col-lg col-md-6 col-12 mb-3">
-                    <h6>Buzzer</h6>
-                    <p class="text-muted small">Pin {{ config.GPIO.PIN_BUZZER }}</p>
-                    <button class="btn btn-lg btn-secondary btn-toggle-pin" data-pin-name="buzzer">Toggle</button>
-                    <div class="mt-2">Status: <span class="badge" id="hw-buzzer">--</span></div>
-                </div>
-            </div>
+    <h1>Hardware Dashboard</h1>
+    <p class="text-muted">Live status and control of system hardware components.</p>
+
+    <!-- System Core -->
+    <h3>System Core</h3>
+    <div class="hardware-grid">
+        <div class="device-card rpi">
+            <div class="type">System Host</div>
+            <h5>Raspberry Pi 5</h5>
+            <p class="io-details">Central Control Unit</p>
+        </div>
+        <div class="device-card io-device">
+            <div class="type">Modbus Input Module</div>
+            <h5>USR-IO4040</h5>
+            <p class="io-details">Slave ID: {{ config.MODBUS.DEVICE_ADDRESS_INPUTS }}</p>
+        </div>
+        <div class="device-card io-device">
+            <div class="type">Modbus Output Module</div>
+            <h5>USR-IO8000</h5>
+            <p class="io-details">Slave ID: {{ config.MODBUS.DEVICE_ADDRESS_OUTPUTS }}</p>
         </div>
     </div>
-</div>
-{% endblock %}
 
-<!-- ADD THIS SCRIPT BLOCK -->
-{% block scripts %}
-<script src="/static/js/hardware.js"></script>
+    <!-- Output Devices -->
+    <h3 class="mt-4">Output Devices (Relays)</h3>
+    <div class="hardware-grid">
+        {% set outputs = {
+            'Conveyor': config.OUTPUTS.CONVEYOR,
+            'Gate': config.OUTPUTS.GATE,
+            'Diverter': config.OUTPUTS.DIVERTER,
+            'Green LED': config.OUTPUTS.LED_GREEN,
+            'Red LED': config.OUTPUTS.LED_RED,
+            'Buzzer': config.OUTPUTS.BUZZER
+        } %}
+        {% for name, channel in outputs.items() %}
+        <div class="device-card peripheral" data-channel-type="output" data-channel-id="{{ channel }}">
+            <div class="type">Output Relay</div>
+            <h5>{{ name }}</h5>
+            <p class="io-details">Coil Address: {{ channel }}</p>
+            <label class="switch">
+              <input type="checkbox" class="control-toggle">
+              <span class="slider"></span>
+            </label>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Input Devices -->
+    <h3 class="mt-4">Input Devices (Sensors)</h3>
+    <div class="hardware-grid">
+        {% set inputs = {
+            'Entry Sensor': config.SENSORS.ENTRY_CHANNEL,
+            'Exit Sensor': config.SENSORS.EXIT_CHANNEL
+        } %}
+        {% for name, channel in inputs.items() %}
+        <div class="device-card peripheral" data-channel-type="input" data-channel-id="{{ channel }}">
+            <div class="type">Discrete Input</div>
+            <h5>{{ name }}</h5>
+            <p class="io-details">Input Channel: {{ channel }}</p>
+            <div class="status-indicator">OFF</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = function(e) {
+        console.log("[WebSocket] Connection established. Waiting for status updates...");
+    };
+
+    socket.onclose = function(event) {
+        console.error('[WebSocket] Connection died. Page will not receive live updates.');
+    };
+
+    socket.onerror = function(error) {
+        console.error(`[WebSocket] Error: ${error.message}`);
+    };
+
+    socket.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'modbus_state' && data.payload) {
+                const inputsState = data.payload.inputs;
+                const outputsState = data.payload.outputs;
+
+                updateInputCards(inputsState);
+                updateOutputCards(outputsState);
+            }
+        } catch (e) {
+            console.warn("Received non-JSON message from WebSocket:", event.data);
+        }
+    };
+
+    function updateInputCards(inputsState) {
+        if (!inputsState) return;
+        document.querySelectorAll('[data-channel-type="input"]').forEach(card => {
+            const channelId = parseInt(card.dataset.channelId, 10);
+            const indicator = card.querySelector('.status-indicator');
+            const isActive = inputsState[channelId - 1];
+            updateStatusIndicator(indicator, isActive);
+        });
+    }
+
+    function updateOutputCards(outputsState) {
+        if (!outputsState) return;
+        document.querySelectorAll('[data-channel-type="output"]').forEach(card => {
+            const channelId = parseInt(card.dataset.channelId, 10);
+            const toggle = card.querySelector('.control-toggle');
+            const isActive = outputsState[channelId];
+            toggle.checked = isActive;
+        });
+    }
+    
+    // --- CORRECTED: Send control commands via WebSocket ---
+    function setOutputState(channelId, isOn) {
+        // Ensure the socket is ready before trying to send.
+        if (socket.readyState === WebSocket.OPEN) {
+            // Define a structured message for the server.
+            const message = {
+                type: 'control_output',
+                payload: {
+                    channel: channelId,
+                    state: isOn
+                }
+            };
+            // Send the message as a JSON string.
+            socket.send(JSON.stringify(message));
+            console.log(`Sent command to channel ${channelId}: ${isOn ? 'ON' : 'OFF'}`);
+        } else {
+            console.error("WebSocket is not open. Cannot send command.");
+        }
+    }
+
+    function updateStatusIndicator(element, isActive) {
+        if (!element) return;
+        element.textContent = isActive ? 'ON' : 'OFF';
+        element.classList.toggle('active', isActive);
+    }
+
+    document.querySelectorAll('.control-toggle').forEach(toggle => {
+        toggle.addEventListener('change', function() {
+            const card = this.closest('.device-card');
+            const channelId = parseInt(card.dataset.channelId, 10);
+            setOutputState(channelId, this.checked);
+        });
+    });
+});
+</script>
 {% endblock %}
