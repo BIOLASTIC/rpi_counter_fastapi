@@ -1,5 +1,5 @@
 """
-Standalone AI Processing Service - FINAL PRODUCTION VERSION (v3)
+Standalone AI Processing Service - FINAL PRODUCTION VERSION (v4)
 
 This version uses a robust message-draining loop to solve the "slow consumer"
 problem. When the service starts, it discards any backlog of frames and only
@@ -7,6 +7,8 @@ processes the most recent one, preventing the Redis output buffer from
 overflowing and causing a disconnect. This is the definitive solution.
 
 ADDED: Redis heartbeat to signal health status to the main application.
+CHANGED: Now respects a global 'ai_service:enabled' Redis key to allow for remote toggling.
+FIXED: Connects to Redis with decode_responses=False to correctly handle raw binary JPEG data.
 """
 import cv2
 import numpy as np
@@ -23,10 +25,11 @@ INPUT_FRAME_CHANNEL = "camera:frames:usb"
 OUTPUT_STREAM_CHANNEL = "ai_stream:frames:usb"
 MODEL_PATH = "yolov8n.onnx"
 CONFIDENCE_THRESHOLD = 0.5
-# --- NEW: Redis health/heartbeat configuration ---
 AI_HEALTH_KEY = "ai_service:health_status"
-AI_HEALTH_EXPIRY_SEC = 10 # The service is considered offline if no heartbeat for 10s
-AI_HEARTBEAT_INTERVAL_SEC = 2 # Send a heartbeat every 2 seconds
+AI_HEALTH_EXPIRY_SEC = 10 
+AI_HEARTBEAT_INTERVAL_SEC = 2
+AI_ENABLED_KEY = "ai_service:enabled"
+
 
 COCO_CLASSES = [
     'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
@@ -43,7 +46,7 @@ COCO_CLASSES = [
 ]
 TARGET_CLASSES = {'bottle', 'cup', 'cell phone', 'book', 'box'}
 
-def process_frame_sync(frame_data, session, model_width, model_height):
+def process_frame_sync(frame_data: bytes, session, model_width, model_height):
     """Synchronous, CPU-bound function to process a single image frame."""
     np_array = np.frombuffer(frame_data, np.uint8)
     image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
@@ -71,7 +74,7 @@ def process_frame_sync(frame_data, session, model_width, model_height):
     return buffer.tobytes()
 
 async def main():
-    print("--- Starting Standalone AI Processor Service (PRODUCTION v3) ---")
+    print("--- Starting Standalone AI Processor Service ---")
     try:
         session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
         input_details = session.get_inputs()[0]
@@ -86,7 +89,13 @@ async def main():
         exit_reason = None
         try:
             print("Connecting to Redis...")
-            redis_client = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", health_check_interval=30)
+            # --- THE DEFINITIVE FIX IS HERE ---
+            # Connect in binary mode (decode_responses=False) to handle raw JPEG bytes.
+            redis_client = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", health_check_interval=30, decode_responses=False)
+            
+            # Use a separate client with decoding for string-based commands (health, toggle)
+            str_redis_client = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", health_check_interval=30, decode_responses=True)
+            
             await redis_client.ping()
             print("✅ Redis connection successful.")
             
@@ -96,25 +105,27 @@ async def main():
                 
                 last_heartbeat_time = 0
                 while True:
-                    # --- NEW: Send heartbeat periodically ---
                     current_time = asyncio.get_event_loop().time()
                     if current_time - last_heartbeat_time > AI_HEARTBEAT_INTERVAL_SEC:
-                        await redis_client.set(AI_HEALTH_KEY, "online", ex=AI_HEALTH_EXPIRY_SEC)
+                        await str_redis_client.set(AI_HEALTH_KEY, "online", ex=AI_HEALTH_EXPIRY_SEC)
                         last_heartbeat_time = current_time
 
-                    # Wait for a message with a timeout to allow the loop to run for heartbeats
+                    is_enabled = await str_redis_client.get(AI_ENABLED_KEY)
+                    if is_enabled != "true":
+                        await asyncio.sleep(1) 
+                        continue
+
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if not message:
-                        continue # Loop to send next heartbeat
+                        continue
 
-                    # THE FIX: Drain the queue to get the most recent frame
                     while True:
                         latest_message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.001)
                         if latest_message is None:
                             break
                         message = latest_message
                     
-                    # Process the single, most-recent frame in a separate thread
+                    # The message['data'] is now correctly of type `bytes`. No conversion needed.
                     processed_buffer = await asyncio.to_thread(
                         process_frame_sync, message['data'], session, model_width, model_height
                     )
@@ -135,6 +146,7 @@ async def main():
             traceback.print_exc()
         finally:
             if redis_client: await redis_client.aclose()
+            if 'str_redis_client' in locals() and str_redis_client: await str_redis_client.aclose()
             if isinstance(exit_reason, KeyboardInterrupt): break
             await asyncio.sleep(5)
 

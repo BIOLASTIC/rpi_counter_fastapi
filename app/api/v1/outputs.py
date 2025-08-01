@@ -15,7 +15,7 @@ def get_modbus_controller(request: Request) -> AsyncModbusController:
     return request.app.state.modbus_controller
 
 # Define the literal types for valid output names from settings
-OutputPinName = Literal["conveyor", "gate", "diverter", "led_green", "led_red", "buzzer"]
+OutputPinName = Literal["conveyor", "gate", "diverter", "led_green", "led_red", "buzzer", "camera_light"]
 
 @router.post("/toggle/{name}", status_code=200)
 async def toggle_output_by_name(

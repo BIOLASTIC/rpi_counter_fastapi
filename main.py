@@ -10,6 +10,7 @@ This script is now solely responsible for:
 - Initializing and managing the lifespan of core application services (Orchestration,
   Detection, System Status, Modbus Polling, etc.).
 - Broadcasting status updates via WebSocket.
+CHANGED: Sets the initial state of the AI Service (enabled/disabled) on startup.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -42,6 +43,8 @@ from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
 from app.websocket.connection_manager import manager as websocket_manager
 
+# --- NEW: Redis key constant ---
+AI_ENABLED_KEY = "ai_service:enabled"
 
 class NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> Response:
@@ -63,6 +66,12 @@ async def lifespan(app: FastAPI):
 
     # Initialize Redis client
     app.state.redis_client = redis.from_url("redis://localhost", decode_responses=True)
+
+    # --- NEW: Set initial AI service state from config ---
+    initial_ai_state = "true" if settings.AI_SERVICE_ENABLED_BY_DEFAULT else "false"
+    await app.state.redis_client.set(AI_ENABLED_KEY, initial_ai_state)
+    print(f"Initial AI service state set to: {'ENABLED' if settings.AI_SERVICE_ENABLED_BY_DEFAULT else 'DISABLED'}")
+
 
     # Initialize all application services in the correct dependency order
     app.state.modbus_controller = await AsyncModbusController.get_instance()

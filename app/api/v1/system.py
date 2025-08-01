@@ -21,6 +21,17 @@ async def get_system_status(service: AsyncSystemService = Depends(get_system_ser
     """Get overall system health status."""
     return await service.get_system_status()
 
+# --- NEW: Endpoint to toggle the AI service ---
+@router.post("/ai/toggle", status_code=200)
+async def toggle_ai_service(service: AsyncSystemService = Depends(get_system_service)):
+    """
+    Toggles the AI detection service on or off.
+    Returns the new state ('enabled' or 'disabled').
+    """
+    new_state = await service.toggle_ai_service()
+    return {"message": f"AI service is now {new_state}.", "new_state": new_state}
+
+
 @router.post("/reset-all", status_code=200)
 async def reset_all_state(service: AsyncSystemService = Depends(get_system_service)):
     """Resets all counters and stops all hardware. A full system state reset."""

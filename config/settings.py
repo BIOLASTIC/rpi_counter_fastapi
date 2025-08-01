@@ -1,9 +1,3 @@
-"""
-REVISED: Complete overhaul for Modbus I/O.
-- Removed the obsolete GpioSettings class.
-- Updated ModbusSettings to support two separate device addresses (one for inputs, one for outputs).
-- Added a new OutputChannelSettings class to map logical device names to the 0-indexed coil addresses on the USR-IO8000 module.
-"""
 from functools import lru_cache
 from typing import Literal, Dict
 from pydantic import Field
@@ -58,7 +52,8 @@ class OutputChannelSettings(BaseSettings):
     DIVERTER: int = 2
     LED_GREEN: int = 3
     LED_RED: int = 4
-    BUZZER: int = 5
+    CAMERA_LIGHT: int = 5
+    BUZZER: int = 6
 
 class ModbusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
@@ -103,6 +98,8 @@ class AppSettings(BaseSettings):
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
     UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
+    # CHANGED: Added new setting for default AI state
+    AI_SERVICE_ENABLED_BY_DEFAULT: bool = True
 
 
     # Nested configuration objects

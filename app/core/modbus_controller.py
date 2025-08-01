@@ -39,9 +39,18 @@ class AsyncModbusController:
             self.initialized = True
             self.health_status = ModbusHealthStatus.DISCONNECTED
             self._is_connected = False
-            self._output_name_to_address_map = settings.OUTPUTS.model_dump()
+            
+            # --- THE DEFINITIVE FIX IS HERE ---
+            # The API sends lowercase names (e.g., 'camera_light'). The original code created a map
+            # with uppercase keys ('CAMERA_LIGHT'), causing the lookup to fail.
+            # This comprehension creates the map with lowercase keys to ensure a match.
+            self._output_name_to_address_map = {
+                k.lower(): v for k, v in settings.OUTPUTS.model_dump().items()
+            }
             self._output_address_to_name_map = {v: k for k, v in self._output_name_to_address_map.items()}
             print("--- Modbus Controller Initialized ---")
+            print(f"    Loaded output map: {self._output_name_to_address_map}")
+
 
     @classmethod
     async def get_instance(cls) -> 'AsyncModbusController':
@@ -51,6 +60,7 @@ class AsyncModbusController:
         return cls._instance
 
     def get_output_address(self, name: str) -> Optional[int]:
+        # Now, the lookup `name.lower()` will correctly find keys like 'camera_light' in our map.
         return self._output_name_to_address_map.get(name.lower())
 
     async def connect(self) -> bool:

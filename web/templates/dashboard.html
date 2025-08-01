@@ -1,113 +1,152 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v2.css">
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.1">
 
-<div class="dashboard-grid">
+<div class="dashboard-container">
 
-    <!-- TOP ROW: Contains Animation and Progress side-by-side -->
-    <div class="top-row">
-        <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
-            <div id="conveyor-belt"></div>
+    <!-- NEW: Live Process View Card with Animation -->
+    <div class="grid-card animation-card">
+        <h3 class="card-title"><i class="bi bi-truck-front"></i> Live Process View</h3>
+        <div id="animation-zone" data-animation-time="{{ animation_time }}">
+            <div id="conveyor-belt">
+                <!-- Box animations will be spawned here by JS -->
+            </div>
             <div id="conveyor-overlay-info">
                 <div class="info-box">
-                    <span class="info-label"><i class="bi bi-arrows-expand"></i> ON BELT</span>
+                    <span class="info-label">ON BELT</span>
                     <span class="info-value" id="count-on-belt">0</span>
                 </div>
-                <div class="info-box on-belt">
-                    <span class="info-label"><i class="bi bi-box-seam"></i> PROCESSED THIS RUN</span>
-                    <span class="info-value" id="count-exited">0</span>
+                <div class="info-box-main">
+                    <span class="info-label">PROCESSED THIS RUN</span>
+                    <span class="info-value-main" id="count-exited">0</span>
+                </div>
+                <div class="info-box">
+                    <span class="info-label">MODE</span>
+                    <span class="info-value" id="conveyor-mode">STOPPED</span>
                 </div>
             </div>
-        </div>
-        <div id="batch-progress-zone" class="dashboard-zone">
-            <h5 class="zone-title"><i class="bi bi-stack"></i> Run Status</h5>
-            <div class="progress-container">
-                <svg class="progress-circle" viewBox="0 0 100 100">
-                    <circle class="progress-circle__trail" cx="50" cy="50" r="45"></circle>
-                    <circle class="progress-circle__path" cx="50" cy="50" r="45"></circle>
-                </svg>
-                <div class="progress-text">
-                    <div id="progress-percentage">0%</div>
-                    <div id="progress-details">IDLE</div>
-                </div>
-            </div>
-            <div class="mode-status">Mode: <span class="status-badge" id="system-mode">--</span></div>
-            <div class="mode-status mt-2">Profile: <span class="status-badge" id="active-profile-display">None</span></div>
         </div>
     </div>
 
-    <!-- ZONE 3: LIVE FEEDS -->
-    <div id="live-feeds-container" class="dashboard-zone">
-        <h5 class="zone-title"><i class="bi bi-camera-video-fill"></i> Live Feeds</h5>
+    <!-- Run Status Section -->
+    <div class="grid-card run-status-card">
+        <h3 class="card-title" style="justify-content: center;"><i class="bi bi-stack"></i> Run Status</h3>
+        <div class="progress-container">
+            <svg class="progress-circle" viewBox="0 0 100 100">
+                <circle class="progress-circle__trail" cx="50" cy="50" r="45"></circle>
+                <circle class="progress-circle__path" id="progress-path" cx="50" cy="50" r="45" style="stroke-dasharray: 282.7; stroke-dashoffset: 282.7;"></circle>
+            </svg>
+            <div class="progress-text">
+                <div id="progress-percentage">0%</div>
+                <div id="progress-details">0 / ∞</div>
+            </div>
+        </div>
+        <div class="status-line"><strong>Active Profile:</strong> <span class="badge" id="active-profile-display">None</span></div>
+    </div>
+    
+    <!-- Live Feeds Section -->
+    <div class="grid-card feeds-card">
+        <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Feeds</h3>
         <div class="feeds-grid">
-            <div class="camera-feed-container" id="feed-container-usb">
-                <div class="camera-title">USB CAM (RAW - 30 FPS)</div>
+            <div class="camera-feed-container">
+                <div class="camera-title-overlay">USB CAM (RAW)</div>
                 <img id="live-camera-feed-usb" src="/api/v1/camera/stream/usb" alt="Live feed for camera usb">
-                <div id="camera-offline-overlay-usb" class="camera-offline-overlay hidden"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
             </div>
-            <div class="camera-feed-container" id="feed-container-ai">
-                <div class="camera-title">AI DETECTION (CPU - ~8 FPS)</div>
+            <div class="camera-feed-container">
+                <div class="camera-title-overlay">AI DETECTION FEED</div>
                 <img id="live-ai-feed-usb" src="/api/v1/camera/ai_stream/usb" alt="Live AI feed for camera usb">
-                <div id="ai-offline-overlay-usb" class="camera-offline-overlay"><i class="bi bi-robot"></i><span>Connecting...</span></div>
+                <div id="ai-offline-overlay-usb" class="camera-offline-overlay"><i class="bi bi-cpu"></i><span>OFFLINE</span></div>
             </div>
         </div>
     </div>
 
-    <!-- ZONE 4: HARDWARE STATUS -->
-    <div id="system-status-zone" class="dashboard-zone">
-        <h5 class="zone-title"><i class="bi bi-motherboard-fill"></i> Hardware Status</h5>
-        <div class="status-grid">
-            <div class="status-item"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry) <span class="status-badge" id="status-sensor-1">--</span></div>
-            <div class="status-item"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit) <span class="status-badge" id="status-sensor-2">--</span></div>
-            <div class="status-item"><i class="bi bi-fast-forward-fill"></i> Conveyor Relay <span class="status-badge" id="status-conveyor-relay">--</span></div>
-            <div class="status-item"><i class="bi bi-sign-stop-fill"></i> Gate Relay <span class="status-badge" id="status-gate-relay">--</span></div>
-            <div class="status-item"><i class="bi bi-exclude"></i> Diverter Relay <span class="status-badge" id="status-diverter-relay">--</span></div>
-            <div class="status-item"><i class="bi bi-cpu-fill"></i> IO Module <span class="status-badge" id="status-io-module">--</span></div>
-            {% for cam_id in active_camera_ids %}
-            <div class="status-item"><i class="bi bi-camera-fill"></i> Camera ({{ cam_id.upper() }}) <span class="status-badge" id="status-camera-{{ cam_id }}">--</span></div>
-            {% endfor %}
+    <!-- Main Control Section -->
+    <div class="grid-card control-card">
+        <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
+        <div class="control-grid">
+            <div class="control-section">
+                <h4 class="section-title">1. Select Recipe</h4>
+                <div class="form-group">
+                    <label for="object-profile-select">Object Profile</label>
+                    <select id="object-profile-select" class="form-select">
+                        <option value="">-- Select a Profile --</option>
+                        {% for p in object_profiles %}
+                        <option value="{{ p.id }}">{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="control-section">
+                <h4 class="section-title">2. Configure Run</h4>
+                <div class="form-group">
+                    <label for="target-count-input">Target Count (0 for ∞)</label>
+                    <input type="number" class="form-control" id="target-count-input" value="10" min="0">
+                </div>
+                 <div class="form-group" style="margin-top: 1rem;">
+                    <label for="post-batch-delay-input">Post-Run Pause (s)</label>
+                    <input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0">
+                </div>
+            </div>
+            <div class="control-section">
+                <h4 class="section-title">3. Execute</h4>
+                <div class="control-buttons">
+                    <button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
+                    <button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
+                    <button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- ZONE 5: PROCESS CONTROL -->
-    <div id="control-zone" class="dashboard-zone">
-         <h5 class="zone-title"><i class="bi bi-toggles"></i> Production Run Control</h5>
-         <div class="alert alert-info">
-             <strong>Step 1:</strong> Select a Profile, a Target Count, and a Post-Run Pause duration. <br>
-             <strong>Step 2:</strong> Click "Load & Start Run". The camera will be configured automatically.
+    <!-- System Status & Manual Control Section -->
+    <div class="grid-card system-status-card">
+         <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
+         <div class="system-status-grid">
+             <!-- Status Indicators -->
+             <div class="status-item">
+                 <div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div>
+                 <div class="status-badge" id="status-sensor-1">clear</div>
+             </div>
+             <div class="status-item">
+                 <div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div>
+                 <div class="status-badge" id="status-sensor-2">clear</div>
+             </div>
+             <div class="status-item">
+                 <div class="status-label"><i class="bi bi-cpu"></i> IO Module</div>
+                 <div class="status-badge" id="status-io-module">--</div>
+             </div>
+             <div class="status-item">
+                 <div class="status-label"><i class="bi bi-robot"></i> AI Service Health</div>
+                 <div class="status-badge" id="status-ai-service">offline</div>
+             </div>
+             <!-- Manual Toggles -->
+             <div class="status-item manual-control-toggle">
+                 <div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div>
+                 <label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label>
+             </div>
+             <div class="status-item manual-control-toggle">
+                 <div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div>
+                 <label class="toggle-switch"><input type="checkbox" id="control-gate-toggle"><span class="toggle-slider"></span></label>
+             </div>
+              <div class="status-item manual-control-toggle">
+                 <div class="status-label"><i class="bi bi-exclude"></i> Diverter</div>
+                 <label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label>
+             </div>
+             <div class="status-item manual-control-toggle">
+                 <div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div>
+                 <label class="toggle-switch"><input type="checkbox" id="control-camlight-toggle"><span class="toggle-slider"></span></label>
+             </div>
+             <div class="status-item manual-control-toggle">
+                 <div class="status-label"><i class="bi bi-robot"></i> AI Detection</div>
+                 <label class="toggle-switch"><input type="checkbox" id="control-ai-toggle"><span class="toggle-slider"></span></label>
+             </div>
          </div>
-        <div class="row align-items-end g-3">
-            <div class="col-lg-4 col-md-12">
-                <label for="object-profile-select" class="form-label"><strong>Object Profile (Recipe)</strong></label>
-                <select id="object-profile-select" class="form-select form-select-lg">
-                    <option value="">-- Select a Recipe --</option>
-                    {% for p in object_profiles %}
-                    <option value="{{ p.id }}">{{ p.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-lg-2 col-md-6">
-                <label for="target-count-input" class="form-label"><strong>Target Count</strong></label>
-                <input type="number" class="form-control form-control-lg" id="target-count-input" value="10" min="0">
-            </div>
-            <!-- NEW: Post-Run Pause input field -->
-            <div class="col-lg-2 col-md-6">
-                <label for="post-batch-delay-input" class="form-label"><strong>Post-Run Pause (s)</strong></label>
-                <input type="number" class="form-control form-control-lg" id="post-batch-delay-input" value="5" min="0">
-            </div>
-            <div class="col-lg-4">
-                 <div class="d-grid gap-2 d-md-flex">
-                    <button class="btn btn-success btn-lg flex-grow-1" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
-                    <button class="btn btn-danger btn-lg flex-grow-1" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
-                    <button class="btn btn-outline-warning btn-lg" id="reset-all-btn" title="Reset all counts and stop the process."><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
-                 </div>
-            </div>
-        </div>
     </div>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v2.js?v=1.2"></script>
+<script src="/static/js/dashboard_v3.js?v=1.1"></script>
 {% endblock %}
