@@ -94,7 +94,8 @@ async def lifespan(app: FastAPI):
         orchestration_service=app.state.orchestration_service,
         db_session_factory=AsyncSessionFactory,
         sensor_config=settings.SENSORS,
-        output_config=settings.OUTPUTS
+        output_config=settings.OUTPUTS,
+        redis_client=app.state.redis_client
     )
 
     # Set initial hardware state to safe default

@@ -9,11 +9,13 @@ hardware services.
   ensure UI compatibility.
 - ADDED: Safety checks to prevent IndexError from invalid .env sensor channel config.
 - ADDED: In-flight object count from the detection service.
+- ADDED: Health check for the standalone AI service via Redis.
 """
 import asyncio
 import time
 from typing import Optional, Dict
 import psutil
+import redis.asyncio as redis
 
 from app.core.modbus_controller import AsyncModbusController, ModbusHealthStatus
 from app.core.camera_manager import AsyncCameraManager, CameraHealthStatus
@@ -46,7 +48,8 @@ class AsyncSystemService:
         orchestration_service: AsyncOrchestrationService,
         db_session_factory,
         sensor_config,
-        output_config
+        output_config,
+        redis_client: redis.Redis # <<< THIS IS THE FIX: Added redis_client parameter
     ):
         self._io = modbus_controller
         self._poller = modbus_poller
@@ -56,6 +59,7 @@ class AsyncSystemService:
         self._sensor_config = sensor_config
         self._output_config = output_config.model_dump()
         self._app_start_time = time.monotonic()
+        self._redis = redis_client # Store the redis client instance
 
     async def full_system_reset(self):
         """Resets the running process. This is a "soft" reset."""
@@ -91,6 +95,10 @@ class AsyncSystemService:
                     return output_states[channel]
                 return False
 
+            # --- NEW: Check for the AI service's heartbeat in Redis ---
+            ai_service_health = await self._redis.get("ai_service:health_status")
+            ai_service_status = "online" if ai_service_health else "offline"
+
             return {
                 "cpu_usage": psutil.cpu_percent(interval=None),
                 "memory_usage": psutil.virtual_memory().percent,
@@ -107,8 +115,8 @@ class AsyncSystemService:
                 "led_green_status": get_output_state("led_green"),
                 "led_red_status": get_output_state("led_red"),
                 "buzzer_status": get_output_state("buzzer"),
-                # --- NEW: Include the in-flight count in the status payload ---
                 "in_flight_count": self._detection_service.get_in_flight_count(),
+                "ai_service_status": ai_service_status,
             }
         except Exception as e:
             print(f"FATAL ERROR in get_system_status: {e}")

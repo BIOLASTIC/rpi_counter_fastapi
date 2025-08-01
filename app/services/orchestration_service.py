@@ -8,6 +8,9 @@ GPIO controller. All original features and logic have been preserved.
 - It retrieves the mapping of logical names (e.g., 'conveyor') to coil addresses
   from the global settings object.
 - ADDED: Logic to track target count for a batch run.
+- ADDED: Logic for a user-defined pause after a run completes.
+- REVISED: The start_run method is now atomic, handling profile loading and run start in one transaction.
+- REVISED: The system now runs in a continuous loop, starting the next batch automatically after the post-run pause.
 """
 import asyncio
 from enum import Enum
@@ -27,10 +30,10 @@ from config import settings
 class OperatingMode(str, Enum):
     """Defines the high-level operational states of the system."""
     STOPPED = "Stopped"
-    IDLE = "Idle (Profile Loaded)"
+    IDLE = "Idle"
     RUNNING = "Running"
-    PAUSED = "Paused"
-    COMPLETE = "Complete" # NEW: State for when a batch finishes
+    PAUSED_BETWEEN_BATCHES = "Paused (Between Batches)" # REVISED: New state for clarity
+    # REMOVED: The 'COMPLETE' state is no longer a final state, as the system loops.
 
 
 class AsyncOrchestrationService:
@@ -48,10 +51,16 @@ class AsyncOrchestrationService:
         self._get_db_session = db_session_factory
         self._redis = redis_client
         self._mode = OperatingMode.STOPPED
-        self._active_profile: Optional[ObjectProfile] = None
-        self._current_count = 0
-        self._target_count = 0 # NEW: Attribute for batch size
         self._lock = asyncio.Lock()
+        
+        # --- Run Parameters ---
+        # These are stored to allow for continuous looping
+        self._active_profile: Optional[ObjectProfile] = None
+        self._run_profile_id: Optional[int] = None
+        self._run_target_count: int = 0
+        self._run_post_batch_delay_sec: int = 5
+        self._current_count: int = 0
+        
         self._output_map = settings.OUTPUTS
 
     async def initialize_hardware_state(self):
@@ -63,39 +72,6 @@ class AsyncOrchestrationService:
         await self._io.write_coil(self._output_map.LED_GREEN, False)
         await self._io.write_coil(self._output_map.LED_RED, True)
 
-    async def load_and_set_active_profile(self, profile_id: int) -> bool:
-        """Loads a profile from the database and commands the camera."""
-        async with self._lock:
-            async with self._get_db_session() as session:
-                result = await session.execute(
-                    select(ObjectProfile)
-                    .options(selectinload(ObjectProfile.camera_profile))
-                    .where(ObjectProfile.id == profile_id)
-                )
-                profile = result.scalar_one_or_none()
-
-            if not profile or not profile.camera_profile:
-                return False
-
-            self._active_profile = profile
-            self._mode = OperatingMode.IDLE
-            print(f"Orchestrator: Loaded Active Profile -> '{profile.name}' from DATABASE.")
-
-            cam_profile = self._active_profile.camera_profile
-            command = {
-                "action": "apply_settings",
-                "settings": {
-                    "autofocus": cam_profile.autofocus,
-                    "exposure": cam_profile.exposure,
-                    "gain": cam_profile.gain,
-                    "white_balance_temp": cam_profile.white_balance_temp,
-                    "brightness": cam_profile.brightness,
-                }
-            }
-            await self._redis.publish("camera:commands:usb", json.dumps(command))
-            print(f"Orchestrator: Commanded camera to apply settings for '{cam_profile.name}'.")
-            return True
-
     def get_active_profile(self) -> Optional[ObjectProfile]:
         """Returns the currently loaded ObjectProfile instance."""
         return self._active_profile
@@ -104,48 +80,108 @@ class AsyncOrchestrationService:
         """Callback for the detection service to increment the run counter."""
         if self._mode == OperatingMode.RUNNING:
             self._current_count += 1
-            # NEW: Check if the batch is complete
-            if self._target_count > 0 and self._current_count >= self._target_count:
-                print("Orchestrator: Target count reached. Completing run.")
-                asyncio.create_task(self.complete_run())
+            if self._run_target_count > 0 and self._current_count >= self._run_target_count:
+                print("Orchestrator: Target count reached. Beginning pause and loop sequence.")
+                # This will pause, then re-start the run automatically
+                asyncio.create_task(self.complete_and_loop_run())
 
 
-    async def start_run(self, target_count: int = 0):
-        """Starts a production run, commanding hardware to its 'running' state."""
+    async def start_run(self, profile_id: int, target_count: int, post_batch_delay_sec: int) -> bool:
+        """
+        Atomically loads a profile, configures the camera, and starts a production run.
+        This is the single entry point for starting any new run.
+        Returns True on success, False on failure (e.g., profile not found).
+        """
         async with self._lock:
-            # A run can only start if a profile is loaded
-            if self._mode not in [OperatingMode.IDLE, OperatingMode.PAUSED, OperatingMode.COMPLETE]:
+            # Prevent starting if a run is already in progress
+            if self._mode in [OperatingMode.RUNNING, OperatingMode.PAUSED_BETWEEN_BATCHES]:
+                print(f"Orchestrator: Ignoring start command, system is already in mode '{self._mode.value}'.")
+                return False
+
+            # --- Store run parameters for looping ---
+            self._run_profile_id = profile_id
+            self._run_target_count = target_count
+            self._run_post_batch_delay_sec = post_batch_delay_sec
+
+            # --- Call the internal method to execute the start sequence ---
+            return await self._execute_start_sequence()
+            
+    async def _execute_start_sequence(self) -> bool:
+        """Internal method to start a batch. Can be called to loop."""
+        # This method assumes it's being called from within a lock.
+        
+        # --- Step 1: Load the profile from the database ---
+        async with self._get_db_session() as session:
+            result = await session.execute(
+                select(ObjectProfile)
+                .options(selectinload(ObjectProfile.camera_profile))
+                .where(ObjectProfile.id == self._run_profile_id)
+            )
+            profile = result.scalar_one_or_none()
+
+        if not profile or not profile.camera_profile:
+            print(f"Orchestrator: FAILED to start batch. Profile ID {self._run_profile_id} not found or is invalid.")
+            await self.stop_run() # Go to a safe state
+            return False
+
+        self._active_profile = profile
+        print(f"Orchestrator: Loaded Active Profile -> '{profile.name}' for new batch.")
+
+        # --- Step 2: Command the camera service to apply settings via Redis ---
+        cam_profile = self._active_profile.camera_profile
+        command = { "action": "apply_settings", "settings": { "autofocus": cam_profile.autofocus, "exposure": cam_profile.exposure, "gain": cam_profile.gain, "white_balance_temp": cam_profile.white_balance_temp, "brightness": cam_profile.brightness } }
+        await self._redis.publish("camera:commands:usb", json.dumps(command))
+        
+        # --- Step 3: Start the hardware and set the operating mode ---
+        print(f"Orchestrator: Starting new batch. Target: {self._run_target_count if self._run_target_count > 0 else 'Unlimited'}")
+        self._current_count = 0 
+        self._mode = OperatingMode.RUNNING
+
+        await self._io.write_coil(self._output_map.LED_RED, False)
+        await self._io.write_coil(self._output_map.LED_GREEN, True)
+        await self._io.write_coil(self._output_map.CONVEYOR, True)
+        return True
+
+    async def complete_and_loop_run(self):
+        """
+        Sequence for when a batch target is met. Pauses, then starts the next batch.
+        """
+        # --- Step 1: Pause the system ---
+        async with self._lock:
+            if self._mode != OperatingMode.RUNNING: return
+            self._mode = OperatingMode.PAUSED_BETWEEN_BATCHES
+            await self._io.write_coil(self._output_map.CONVEYOR, False)
+            print(f"Orchestrator: Batch complete. Pausing for {self._run_post_batch_delay_sec} seconds before next batch.")
+
+        # --- Step 2: Wait for the user-defined duration (outside the lock) ---
+        await asyncio.sleep(self._run_post_batch_delay_sec)
+
+        # --- Step 3: Re-acquire lock and start the next batch ---
+        async with self._lock:
+            # CRITICAL CHECK: If the user hit 'Stop Run' during the pause, the mode will
+            # have changed to STOPPED. In this case, we must not start the next batch.
+            if self._mode != OperatingMode.PAUSED_BETWEEN_BATCHES:
+                print("Orchestrator: Loop interrupted by a 'Stop' command. Halting continuous run.")
                 return
 
-            print(f"Orchestrator: Starting production run. Target: {target_count if target_count > 0 else 'Unlimited'}")
-            self._current_count = 0 
-            self._target_count = target_count
-            self._mode = OperatingMode.RUNNING
-
-            await self._io.write_coil(self._output_map.LED_RED, False)
-            await self._io.write_coil(self._output_map.LED_GREEN, True)
-            await self._io.write_coil(self._output_map.CONVEYOR, True)
-            
-    # --- NEW: Method to handle batch completion gracefully ---
-    async def complete_run(self):
-        """Sequence for when a batch target is met."""
-        async with self._lock:
-            self._mode = OperatingMode.COMPLETE
-            # Stop the conveyor but keep the green light on to show success
-            await self._io.write_coil(self._output_map.CONVEYOR, False)
-            print("Orchestrator: Run complete. Conveyor stopped.")
+            print("Orchestrator: Pause finished. Looping to next batch...")
+            await self._execute_start_sequence()
 
     async def stop_run(self):
-        """Stops all operations, unloads profile, returns hardware to safe state."""
+        """
+        Stops all operations, unloads profile, and returns hardware to a safe state.
+        This is the primary method to break the continuous loop.
+        """
         async with self._lock:
             if self._mode == OperatingMode.STOPPED:
                 return
 
-            print("Orchestrator: Stopping all operations and unloading profile.")
+            print("Orchestrator: STOP command received. Halting all operations and clearing run parameters.")
             self._mode = OperatingMode.STOPPED
             self._active_profile = None
+            self._run_profile_id = None
             self._current_count = 0
-            self._target_count = 0
+            self._run_target_count = 0
             await self.initialize_hardware_state()
 
     def get_status(self) -> dict:
@@ -155,5 +191,6 @@ class AsyncOrchestrationService:
             "mode": self._mode.value,
             "active_profile": profile_name,
             "run_progress": self._current_count,
-            "target_count": self._target_count, # NEW: Send target count
+            "target_count": self._run_target_count,
+            "post_batch_delay_sec": self._run_post_batch_delay_sec,
         }

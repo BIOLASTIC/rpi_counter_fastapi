@@ -10,7 +10,6 @@
         <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
             <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
-                <!-- MODIFIED: Added a new info box for in-flight count -->
                 <div class="info-box">
                     <span class="info-label"><i class="bi bi-arrows-expand"></i> ON BELT</span>
                     <span class="info-value" id="count-on-belt">0</span>
@@ -30,7 +29,6 @@
                 </svg>
                 <div class="progress-text">
                     <div id="progress-percentage">0%</div>
-                    <!-- This element will now show X / Y -->
                     <div id="progress-details">IDLE</div>
                 </div>
             </div>
@@ -76,12 +74,11 @@
     <div id="control-zone" class="dashboard-zone">
          <h5 class="zone-title"><i class="bi bi-toggles"></i> Production Run Control</h5>
          <div class="alert alert-info">
-             <strong>Step 1:</strong> Select a Profile and set a Target Count. <br>
+             <strong>Step 1:</strong> Select a Profile, a Target Count, and a Post-Run Pause duration. <br>
              <strong>Step 2:</strong> Click "Load & Start Run". The camera will be configured automatically.
          </div>
-        <!-- MODIFIED: Row layout updated for the new input -->
         <div class="row align-items-end g-3">
-            <div class="col-lg-5 col-md-6">
+            <div class="col-lg-4 col-md-12">
                 <label for="object-profile-select" class="form-label"><strong>Object Profile (Recipe)</strong></label>
                 <select id="object-profile-select" class="form-select form-select-lg">
                     <option value="">-- Select a Recipe --</option>
@@ -90,12 +87,16 @@
                     {% endfor %}
                 </select>
             </div>
-            <!-- NEW: Target Count input field -->
             <div class="col-lg-2 col-md-6">
                 <label for="target-count-input" class="form-label"><strong>Target Count</strong></label>
                 <input type="number" class="form-control form-control-lg" id="target-count-input" value="10" min="0">
             </div>
-            <div class="col-lg-5">
+            <!-- NEW: Post-Run Pause input field -->
+            <div class="col-lg-2 col-md-6">
+                <label for="post-batch-delay-input" class="form-label"><strong>Post-Run Pause (s)</strong></label>
+                <input type="number" class="form-control form-control-lg" id="post-batch-delay-input" value="5" min="0">
+            </div>
+            <div class="col-lg-4">
                  <div class="d-grid gap-2 d-md-flex">
                     <button class="btn btn-success btn-lg flex-grow-1" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
                     <button class="btn btn-danger btn-lg flex-grow-1" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
@@ -108,5 +109,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v2.js?v=1.1"></script>
+<script src="/static/js/dashboard_v2.js?v=1.2"></script>
 {% endblock %}

@@ -5,6 +5,8 @@ This version uses a robust message-draining loop to solve the "slow consumer"
 problem. When the service starts, it discards any backlog of frames and only
 processes the most recent one, preventing the Redis output buffer from
 overflowing and causing a disconnect. This is the definitive solution.
+
+ADDED: Redis heartbeat to signal health status to the main application.
 """
 import cv2
 import numpy as np
@@ -21,6 +23,11 @@ INPUT_FRAME_CHANNEL = "camera:frames:usb"
 OUTPUT_STREAM_CHANNEL = "ai_stream:frames:usb"
 MODEL_PATH = "yolov8n.onnx"
 CONFIDENCE_THRESHOLD = 0.5
+# --- NEW: Redis health/heartbeat configuration ---
+AI_HEALTH_KEY = "ai_service:health_status"
+AI_HEALTH_EXPIRY_SEC = 10 # The service is considered offline if no heartbeat for 10s
+AI_HEARTBEAT_INTERVAL_SEC = 2 # Send a heartbeat every 2 seconds
+
 COCO_CLASSES = [
     'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
     'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
@@ -87,10 +94,18 @@ async def main():
                 await pubsub.subscribe(INPUT_FRAME_CHANNEL)
                 print(f"✅ Subscribed to '{INPUT_FRAME_CHANNEL}'. Starting processing loop...")
                 
+                last_heartbeat_time = 0
                 while True:
-                    # Wait until we get at least one message
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=20.0)
-                    if not message: continue
+                    # --- NEW: Send heartbeat periodically ---
+                    current_time = asyncio.get_event_loop().time()
+                    if current_time - last_heartbeat_time > AI_HEARTBEAT_INTERVAL_SEC:
+                        await redis_client.set(AI_HEALTH_KEY, "online", ex=AI_HEALTH_EXPIRY_SEC)
+                        last_heartbeat_time = current_time
+
+                    # Wait for a message with a timeout to allow the loop to run for heartbeats
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if not message:
+                        continue # Loop to send next heartbeat
 
                     # THE FIX: Drain the queue to get the most recent frame
                     while True:
