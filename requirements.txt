@@ -39,7 +39,7 @@ pytest-dotenv==0.5.2
 # System Monitoring
 psutil==5.9.8
 
-cv2
+#cv2
 
-ultralytics 
-tflite-runtime
+#ultralytics 
+#tflite-runtime

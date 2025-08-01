@@ -4,6 +4,7 @@ from app.core.camera_manager import AsyncCameraManager
 from config import settings
 from pathlib import Path
 import asyncio
+import redis.asyncio as redis
 
 router = APIRouter()
 
@@ -58,3 +59,27 @@ async def get_captured_images(
         return {"images": web_paths, "has_more": has_more}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- NEW: Endpoint to serve the AI-processed video stream ---
+@router.get("/ai_stream/{camera_id}")
+async def get_ai_stream(camera_id: str):
+    """
+    Provides a live MJPEG stream from the AI Service's output Redis channel.
+    """
+    redis_client = redis.from_url("redis://localhost")
+    
+    async def ai_frame_generator():
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(f"ai_stream:frames:{camera_id}")
+        try:
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                if message and message.get("type") == "message":
+                    frame_bytes = message['data']
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        finally:
+            await pubsub.close()
+            await redis_client.close()
+
+    return StreamingResponse(ai_frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")

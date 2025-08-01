@@ -1,12 +1,9 @@
 """
 The main application entry point.
 
-FINAL REVISION: The application lifespan manager has been completely
-refactored to initialize the new Modbus-based services.
-- It removes all references to the old GPIO controller.
-- It correctly instantiates and injects the AsyncModbusController,
-  AsyncModbusPoller, and all updated services in the correct order.
-- All original features like the WebSocket broadcast loop are preserved.
+FINAL REVISION: This version integrates the new AIService into the application's
+lifespan. It correctly instantiates, starts, and stops the AI processing
+loop alongside all other existing services.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -29,7 +26,7 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 if settings.APP_ENV == "development":
     from app.api.v1 import debug as debug_router
 
-# Corrected imports to use the properly named modbus_poller file
+# Import all services, including the new AIService
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.modbus_poller import AsyncModbusPoller
@@ -37,6 +34,7 @@ from app.services.detection_service import AsyncDetectionService
 from app.services.system_service import AsyncSystemService
 from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
+from app.services.ai_service import AIService
 from app.websocket.connection_manager import manager as websocket_manager
 
 
@@ -59,8 +57,8 @@ async def lifespan(app: FastAPI):
 
     app.state.redis_client = redis.from_url("redis://localhost", decode_responses=True)
 
+    # Initialize all existing services as before
     app.state.modbus_controller = await AsyncModbusController.get_instance()
-
     app.state.orchestration_service = AsyncOrchestrationService(
         modbus_controller=app.state.modbus_controller,
         db_session_factory=AsyncSessionFactory,
@@ -71,16 +69,12 @@ async def lifespan(app: FastAPI):
         notification_service=app.state.notification_service,
         captures_dir=settings.CAMERA_CAPTURES_DIR
     )
-
-    # --- THE FIX IS HERE ---
-    # The typo `orchestration_.service` has been corrected to `orchestration_service`.
     app.state.detection_service = AsyncDetectionService(
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
         orchestration_service=app.state.orchestration_service,
         conveyor_settings=settings.CONVEYOR
     )
-
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
         event_callback=app.state.detection_service.handle_sensor_event
@@ -96,13 +90,27 @@ async def lifespan(app: FastAPI):
         output_config=settings.OUTPUTS
     )
 
-    await app.state.orchestration_service.initialize_hardware_state()
+    # --- NEW: Create and store the AI service instance ---
+    app.state.ai_services = []
+    if 'usb' in ACTIVE_CAMERA_IDS:
+        ai_service = AIService(
+            camera_id='usb',
+            redis_client=app.state.redis_client
+        )
+        app.state.ai_services.append(ai_service)
 
+    # Start all background tasks
+    await app.state.orchestration_service.initialize_hardware_state()
     app.state.active_camera_ids = ACTIVE_CAMERA_IDS
     app.state.notification_service.start()
     app.state.modbus_poller.start()
     app.state.camera_manager.start()
 
+    # --- NEW: Start the AI service's background loop ---
+    for service in app.state.ai_services:
+        service.start()
+
+    # WebSocket broadcast loop remains unchanged
     async def broadcast_updates():
         while True:
             try:
@@ -123,7 +131,13 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Graceful shutdown sequence
     print("--- Application shutting down... ---")
+    
+    # --- NEW: Stop the AI service during shutdown ---
+    for service in app.state.ai_services:
+        service.stop()
+
     await app.state.redis_client.close()
     app.state.broadcast_task.cancel()
     await app.state.modbus_poller.stop()

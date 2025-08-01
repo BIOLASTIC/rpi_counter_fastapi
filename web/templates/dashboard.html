@@ -7,20 +7,15 @@
 
     <!-- TOP ROW: Contains Animation and Progress side-by-side -->
     <div class="top-row">
-        <!-- ZONE 1: CONVEYOR ANIMATION (with detailed count) -->
         <div id="animation-zone" class="dashboard-zone" data-animation-time="{{ animation_time }}">
             <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
-                <!-- NOTE: The concepts of "Entered" and "On Belt" are no longer tracked in the new logic. -->
-                <!-- We will display the total count for the current run. -->
                 <div class="info-box on-belt">
                     <span class="info-label"><i class="bi bi-box-seam"></i> PROCESSED THIS RUN</span>
                     <span class="info-value" id="count-exited">0</span>
                 </div>
             </div>
         </div>
-
-        <!-- ZONE 2: BATCH PROGRESS (now shows run status) -->
         <div id="batch-progress-zone" class="dashboard-zone">
             <h5 class="zone-title"><i class="bi bi-stack"></i> Run Status</h5>
             <div class="progress-container">
@@ -42,20 +37,26 @@
     <div id="live-feeds-container" class="dashboard-zone">
         <h5 class="zone-title"><i class="bi bi-camera-video-fill"></i> Live Feeds</h5>
         <div class="feeds-grid">
-            {% for cam_id in active_camera_ids %}
-            <div class="camera-feed-container" id="feed-container-{{ cam_id }}">
-                <div class="camera-title">{{ cam_id.upper() }}</div>
-                <img id="live-camera-feed-{{ cam_id }}" src="/static/images/placeholder.jpg" alt="Live feed for camera {{ cam_id }}">
-                <div id="camera-offline-overlay-{{ cam_id }}" class="camera-offline-overlay hidden"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
+            
+            <!-- Feed 1: The original, full-speed USB camera feed -->
+            <div class="camera-feed-container" id="feed-container-usb">
+                <div class="camera-title">USB CAM (RAW - 30 FPS)</div>
+                <img id="live-camera-feed-usb" src="/api/v1/camera/stream/usb" alt="Live feed for camera usb">
+                <div id="camera-offline-overlay-usb" class="camera-offline-overlay hidden"><i class="bi bi-camera-video-off-fill"></i><span>OFFLINE</span></div>
             </div>
-            {% endfor %}
-            {% if not active_camera_ids %}
-            <p class="text-muted text-center">No camera services are configured.</p>
-            {% endif %}
+
+            <!-- Feed 2: The NEW AI-processed feed at a lower framerate -->
+            <div class="camera-feed-container" id="feed-container-ai">
+                <div class="camera-title">AI DETECTION (CPU - ~8 FPS)</div>
+                <!-- THE FIX IS HERE: Corrected the src URL to include the /camera prefix -->
+                <img id="live-ai-feed-usb" src="/api/v1/camera/ai_stream/usb" alt="Live AI feed for camera usb">
+                <div id="ai-offline-overlay-usb" class="camera-offline-overlay"><i class="bi bi-robot"></i><span>Connecting...</span></div>
+            </div>
+
         </div>
     </div>
 
-    <!-- ZONE 4: HARDWARE STATUS (Restored from old dashboard) -->
+    <!-- ZONE 4: HARDWARE STATUS -->
     <div id="system-status-zone" class="dashboard-zone">
         <h5 class="zone-title"><i class="bi bi-motherboard-fill"></i> Hardware Status</h5>
         <div class="status-grid">
@@ -64,15 +65,14 @@
             <div class="status-item"><i class="bi bi-fast-forward-fill"></i> Conveyor Relay <span class="status-badge" id="status-conveyor-relay">--</span></div>
             <div class="status-item"><i class="bi bi-sign-stop-fill"></i> Gate Relay <span class="status-badge" id="status-gate-relay">--</span></div>
             <div class="status-item"><i class="bi bi-exclude"></i> Diverter Relay <span class="status-badge" id="status-diverter-relay">--</span></div>
-            <div class="status-item"><i class="bi bi-cpu-fill"></i> GPIO Controller <span class="status-badge" id="status-gpio">--</span></div>
-            <div class="status-item"><i class="bi bi-usb-plug-fill"></i> IO Module <span class="status-badge" id="status-io-module">--</span></div>
+            <div class="status-item"><i class="bi bi-cpu-fill"></i> IO Module <span class="status-badge" id="status-io-module">--</span></div>
             {% for cam_id in active_camera_ids %}
             <div class="status-item"><i class="bi bi-camera-fill"></i> Camera ({{ cam_id.upper() }}) <span class="status-badge" id="status-camera-{{ cam_id }}">--</span></div>
             {% endfor %}
         </div>
     </div>
 
-    <!-- ZONE 5: PROCESS CONTROL (New profile controls + old reset button) -->
+    <!-- ZONE 5: PROCESS CONTROL -->
     <div id="control-zone" class="dashboard-zone">
          <h5 class="zone-title"><i class="bi bi-toggles"></i> Production Run Control</h5>
          <div class="alert alert-info">
