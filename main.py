@@ -1,9 +1,15 @@
 """
 The main application entry point.
 
-FINAL REVISION: This version integrates the new AIService into the application's
-lifespan. It correctly instantiates, starts, and stops the AI processing
-loop alongside all other existing services.
+FINAL REVISION: This version has been cleaned up to reflect the final
+architecture. All logic related to the internal AIService has been removed,
+as that functionality is now handled by the standalone `ai_processor.py` script.
+
+This script is now solely responsible for:
+- Running the FastAPI web server.
+- Initializing and managing the lifespan of core application services (Orchestration,
+  Detection, System Status, Modbus Polling, etc.).
+- Broadcasting status updates via WebSocket.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -26,7 +32,7 @@ from app.middleware.metrics_middleware import MetricsMiddleware
 if settings.APP_ENV == "development":
     from app.api.v1 import debug as debug_router
 
-# Import all services, including the new AIService
+# Import all core services
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.modbus_poller import AsyncModbusPoller
@@ -34,7 +40,6 @@ from app.services.detection_service import AsyncDetectionService
 from app.services.system_service import AsyncSystemService
 from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
-from app.services.ai_service import AIService
 from app.websocket.connection_manager import manager as websocket_manager
 
 
@@ -51,13 +56,15 @@ class NoCacheStaticFiles(StaticFiles):
 async def lifespan(app: FastAPI):
     print(f"--- Application starting up in {settings.APP_ENV} mode... ---")
 
+    # Initialize database
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
 
+    # Initialize Redis client
     app.state.redis_client = redis.from_url("redis://localhost", decode_responses=True)
 
-    # Initialize all existing services as before
+    # Initialize all application services in the correct dependency order
     app.state.modbus_controller = await AsyncModbusController.get_instance()
     app.state.orchestration_service = AsyncOrchestrationService(
         modbus_controller=app.state.modbus_controller,
@@ -90,27 +97,16 @@ async def lifespan(app: FastAPI):
         output_config=settings.OUTPUTS
     )
 
-    # --- NEW: Create and store the AI service instance ---
-    app.state.ai_services = []
-    if 'usb' in ACTIVE_CAMERA_IDS:
-        ai_service = AIService(
-            camera_id='usb',
-            redis_client=app.state.redis_client
-        )
-        app.state.ai_services.append(ai_service)
-
-    # Start all background tasks
+    # Set initial hardware state to safe default
     await app.state.orchestration_service.initialize_hardware_state()
     app.state.active_camera_ids = ACTIVE_CAMERA_IDS
+
+    # Start all background tasks managed by the main application
     app.state.notification_service.start()
     app.state.modbus_poller.start()
     app.state.camera_manager.start()
 
-    # --- NEW: Start the AI service's background loop ---
-    for service in app.state.ai_services:
-        service.start()
-
-    # WebSocket broadcast loop remains unchanged
+    # The broadcast loop for sending status updates to the UI
     async def broadcast_updates():
         while True:
             try:
@@ -133,11 +129,6 @@ async def lifespan(app: FastAPI):
 
     # Graceful shutdown sequence
     print("--- Application shutting down... ---")
-    
-    # --- NEW: Stop the AI service during shutdown ---
-    for service in app.state.ai_services:
-        service.stop()
-
     await app.state.redis_client.close()
     app.state.broadcast_task.cancel()
     await app.state.modbus_poller.stop()
@@ -150,15 +141,23 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION, lifespan=lifespan)
+    
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    
+    # Serve static files and captured images
     app.mount("/static", NoCacheStaticFiles(directory=PROJECT_ROOT / "web/static"), name="static")
     app.mount("/captures", NoCacheStaticFiles(directory=PROJECT_ROOT / settings.CAMERA_CAPTURES_DIR), name="captures")
+    
+    # Include all API and web routers
     app.include_router(api_v1_router, prefix="/api/v1")
     app.include_router(web_router)
     app.include_router(websocket_router)
+    
+    # Conditionally include debug routes if in development mode
     if settings.APP_ENV == "development":
         app.include_router(debug_router.router, prefix="/api/v1/debug", tags=["Debug"])
+        
     app.state.templates = Jinja2Templates(directory=str(PROJECT_ROOT / "web/templates"))
     return app
 
