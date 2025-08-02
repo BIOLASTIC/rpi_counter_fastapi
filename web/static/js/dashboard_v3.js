@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
     let socket;
 
-    // --- Client-side state management ---
     const appState = {
         lastSensor1State: false,
         currentMode: 'Stopped',
@@ -31,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function () {
         statusIoModule: document.getElementById('status-io-module'),
         aiServiceStatus: document.getElementById('status-ai-service'),
         
-        // Manual Controls (Switches)
+        // Manual Controls
         conveyorToggle: document.getElementById('control-conveyor-toggle'),
         gateToggle: document.getElementById('control-gate-toggle'),
         diverterToggle: document.getElementById('control-diverter-toggle'),
@@ -46,9 +45,10 @@ document.addEventListener('DOMContentLoaded', function () {
         targetCountInput: document.getElementById('target-count-input'),
         postBatchDelayInput: document.getElementById('post-batch-delay-input'),
 
-        // Overlays
+        // AI Display
         aiOfflineOverlay: document.getElementById('ai-offline-overlay-usb'),
         liveAiFeed: document.getElementById('live-ai-feed-usb'),
+        aiLastDetection: document.getElementById('ai-last-detection-display'),
     };
 
     function connect() {
@@ -62,10 +62,17 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleWebSocketMessage(event) {
         try {
             const message = JSON.parse(event.data);
-            if (message.type === 'system_status') {
-                updateSystemStatus(message.data);
-            } else if (message.type === 'orchestration_status') {
-                updateOrchestrationStatus(message.data);
+            switch (message.type) {
+                case 'system_status':
+                    updateSystemStatus(message.data);
+                    break;
+                case 'orchestration_status':
+                    updateOrchestrationStatus(message.data);
+                    break;
+                // --- NEW: Handle the AI update message ---
+                case 'ai_update':
+                    updateAiDetectionInfo(message.data);
+                    break;
             }
         } catch (e) {
             // Ignore non-JSON messages
@@ -74,19 +81,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateSystemStatus(data) {
         if (!data) return;
-        
         const isSensor1Active = data.sensor_1_status;
-        
-        // --- THE DEFINITIVE FIX: Animation Trigger Logic ---
-        // A box animation is triggered ONLY on the rising edge of the sensor signal
-        // (i.e., changing from false to true) AND only if the system is actively running.
         if (isSensor1Active && !appState.lastSensor1State && appState.currentMode === 'Running') {
             spawnBoxAnimation();
         }
-        // Update the last known state for the next check.
         appState.lastSensor1State = isSensor1Active;
         
-        // Update UI elements
         updateStatusBadge(DOMElements.statusSensor1, data.sensor_1_status, 'triggered', 'clear');
         updateStatusBadge(DOMElements.statusSensor2, data.sensor_2_status, 'triggered', 'clear');
         updateStatusBadge(DOMElements.statusIoModule, data.io_module_status === 'ok', 'ok', 'error', data.io_module_status);
@@ -106,10 +106,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateOrchestrationStatus(data) {
         if (!data) return;
-        
         const mode = data.mode || "Stopped";
-        appState.currentMode = mode; // Update the shared state
-        
+        appState.currentMode = mode;
         DOMElements.conveyorMode.textContent = mode.toUpperCase();
         DOMElements.activeProfile.textContent = data.active_profile || 'None';
         DOMElements.countExited.textContent = data.run_progress || '0';
@@ -129,29 +127,41 @@ document.addEventListener('DOMContentLoaded', function () {
         DOMElements.progressDetails.textContent = `${progress} / ${target > 0 ? target : '∞'}`;
     }
 
+    // --- NEW: Function to update the "Last Detected" display ---
+    function updateAiDetectionInfo(data) {
+        if (!DOMElements.aiLastDetection || !data) return;
+        
+        const lastDetected = data.last_detected;
+        const isSearching = lastDetected === "Searching...";
+        
+        if (isSearching) {
+            DOMElements.aiLastDetection.innerHTML = `<i class="bi bi-search"></i> ${lastDetected}`;
+            DOMElements.aiLastDetection.classList.remove('visible');
+        } else {
+            DOMElements.aiLastDetection.innerHTML = `Last Detected: <span class="detected-object">${lastDetected}</span>`;
+            DOMElements.aiLastDetection.classList.add('visible');
+        }
+    }
+
     function spawnBoxAnimation() {
         const box = document.createElement('div');
         box.className = 'box';
-        
         const transitTime = DOMElements.animationZone.dataset.animationTime || 5;
         box.style.setProperty('--box-transit-time', `${transitTime}s`);
-
         DOMElements.conveyorBelt.appendChild(box);
         setTimeout(() => box.remove(), transitTime * 1000);
     }
 
     function updateStatusBadge(element, isActive, activeClass, inactiveClass, text) {
         if (!element) return;
-        element.className = 'status-badge'; // Reset classes
+        element.className = 'status-badge';
         const stateClass = isActive ? activeClass : inactiveClass;
         element.classList.add(stateClass);
         element.textContent = text || stateClass;
     }
     
     function setToggleState(toggleInput, isActive) {
-        if (toggleInput) {
-            toggleInput.checked = isActive;
-        }
+        if (toggleInput) toggleInput.checked = isActive;
     }
 
     async function postAPI(endpoint, body = {}) {
@@ -167,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // --- Event Listeners ---
+    // Event Listeners
     DOMElements.startRunBtn?.addEventListener('click', () => {
         const profileId = DOMElements.profileSelect.value;
         if (!profileId) return alert('Please select a Profile.');
@@ -177,10 +187,8 @@ document.addEventListener('DOMContentLoaded', function () {
             post_batch_delay_sec: parseInt(DOMElements.postBatchDelayInput.value)
         });
     });
-
     DOMElements.stopRunBtn?.addEventListener('click', () => postAPI('/api/v1/orchestration/run/stop'));
     DOMElements.resetAllBtn?.addEventListener('click', () => postAPI('/api/v1/system/reset-all'));
-
     DOMElements.conveyorToggle?.addEventListener('change', () => postAPI('/api/v1/outputs/toggle/conveyor'));
     DOMElements.gateToggle?.addEventListener('change', () => postAPI('/api/v1/outputs/toggle/gate'));
     DOMElements.diverterToggle?.addEventListener('change', () => postAPI('/api/v1/outputs/toggle/diverter'));
