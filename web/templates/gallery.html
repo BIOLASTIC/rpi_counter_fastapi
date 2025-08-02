@@ -4,12 +4,7 @@
 <style>
     .gallery-container {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-    .gallery-column {
-        display: flex;
-        flex-direction: column;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1rem;
     }
     .gallery-item img {
@@ -17,32 +12,35 @@
         height: auto;
         border-radius: 0.5rem;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transition: transform 0.2s ease-in-out;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        cursor: pointer;
     }
     .gallery-item img:hover {
         transform: scale(1.03);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
     #loader {
         text-align: center;
         padding: 2rem;
-        grid-column: 1 / -1; /* Span both columns */
+        grid-column: 1 / -1;
     }
 </style>
 
 <div class="container">
-    <h1 class="mb-4">Image Gallery</h1>
-    <p class="text-muted">Captured images from events and surveillance, newest first. Click an image to open it in a new tab.</p>
+    <!-- The title is now dynamic -->
+    <h1 class="mb-4">Image Gallery ({{ camera_name }})</h1>
+    <p class="text-muted">Captured images from the {{ camera_name }} camera, newest first. Click an image to open it in a new tab.</p>
 
-    <div class="gallery-container">
-        <div class="gallery-column" id="gallery-col-1">
-            <!-- Images will be loaded here by JavaScript -->
-        </div>
-        <div class="gallery-column" id="gallery-col-2">
-            <!-- Images will be loaded here by JavaScript -->
-        </div>
+    <!-- 
+      THE FIX IS HERE:
+      1. This div now has the ID 'gallery-container' that the script expects.
+      2. It has a 'data-camera-id' attribute that holds the camera ID from the router.
+    -->
+    <div id="gallery-container" class="gallery-container" data-camera-id="{{ camera_id }}">
+        <!-- Images will be loaded here by JavaScript -->
     </div>
 
-    <div id="loader" style="display: none;">
+     <div id="loader">
         <div class="spinner-border" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -51,5 +49,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/gallery.js?v=1.0"></script>
+<!-- It now loads the single, generic gallery.js script -->
+<script type="module" src="/static/js/gallery.js"></script>
 {% endblock %}

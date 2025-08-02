@@ -27,15 +27,15 @@
 </style>
 
 <div class="container">
-    <h1 class="mb-4">Image Gallery (USB)</h1>
-    <p class="text-muted">Captured images from the USB camera, newest first. Click an image to open it in a new tab.</p>
+    <h1 class="mb-4">Image Gallery (RPi)</h1>
+    <p class="text-muted">Captured images from the RPi camera, newest first. Click an image to open it in a new tab.</p>
 
     <!-- THE FIX IS HERE: Add the id="gallery-container" attribute -->
     <div id="gallery-container" class="gallery-container">
         <!-- Images will be loaded here by JavaScript -->
     </div>
 
-    <div id="loader">
+     <div id="loader">
         <div class="spinner-border" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -44,5 +44,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/gallery_usb.js"></script>
+<!-- This script is already correct -->
+<script type="module" src="/static/js/gallery_rpi.js"></script>
 {% endblock %}

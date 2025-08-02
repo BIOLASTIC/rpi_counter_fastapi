@@ -4,12 +4,7 @@
 <style>
     .gallery-container {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-    .gallery-column {
-        display: flex;
-        flex-direction: column;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1rem;
     }
     .gallery-item img {
@@ -17,28 +12,30 @@
         height: auto;
         border-radius: 0.5rem;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transition: transform 0.2s ease-in-out;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        cursor: pointer;
     }
     .gallery-item img:hover {
         transform: scale(1.03);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
     #loader {
         text-align: center;
         padding: 2rem;
-        grid-column: 1 / -1; /* Span both columns */
+        grid-column: 1 / -1;
     }
 </style>
 
 <div class="container">
-    <h1 class="mb-4">Image Gallery (RPI)</h1>
-    <p class="text-muted">Captured images from the RPI camera, newest first.</p>
+    <h1 class="mb-4">Image Gallery (USB)</h1>
+    <p class="text-muted">Captured images from the USB camera, newest first. Click an image to open it in a new tab.</p>
 
-    <div class="gallery-container">
-        <div class="gallery-column" id="gallery-col-1"></div>
-        <div class="gallery-column" id="gallery-col-2"></div>
+    <!-- THE FIX IS HERE: Add the id="gallery-container" attribute -->
+    <div id="gallery-container" class="gallery-container">
+        <!-- The JavaScript is looking for this ID. It must exist. -->
     </div>
 
-     <div id="loader">
+    <div id="loader">
         <div class="spinner-border" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -47,5 +44,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/gallery_rpi.js"></script>
+<script type="module" src="/static/js/gallery_usb.js"></script>
 {% endblock %}

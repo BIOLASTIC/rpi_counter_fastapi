@@ -42,9 +42,6 @@ class UsbCameraSettings(BaseCameraSettings):
     AUTOFOCUS: bool = True
     WHITE_BALANCE_TEMP: int = 0
 
-# --- NEW: Maps logical output names to Modbus coil addresses on the USR-IO8000 ---
-# Based on the user's .env file which previously used GPIO pins.
-# We map them to coil addresses 0 through 5 (for terminals RO1-RO6).
 class OutputChannelSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='OUTPUTS_', case_sensitive=False)
     CONVEYOR: int = 0
@@ -59,15 +56,13 @@ class ModbusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
     PORT: str = "/dev/ttyUSB0"
     BAUDRATE: int = 9600
-    # --- NEW: Explicit addresses for the two modules ---
-    DEVICE_ADDRESS_INPUTS: int = 1   # Address of the USR-IO4040
-    DEVICE_ADDRESS_OUTPUTS: int = 2  # Address of the USR-IO8000
+    DEVICE_ADDRESS_INPUTS: int = 1
+    DEVICE_ADDRESS_OUTPUTS: int = 2
     TIMEOUT_SEC: float = 0.5
     POLLING_MS: int = 50
 
 class SensorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SENSORS_', case_sensitive=False)
-    # Corrected based on user's .env file
     ENTRY_CHANNEL: int = 1
     EXIT_CHANNEL: int = 3
 
@@ -82,23 +77,27 @@ class LoggingSettings(BaseSettings):
 class ConveyorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
     SPEED_M_PER_SEC: float = 0.5
-    # This was missing from the user's .env, adding a default
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
+
+# --- NEW: Add a class for Redis keys for consistency ---
+class RedisKeys(BaseSettings):
+    AI_ENABLED_KEY: str = "ai_service:enabled"
+    AI_HEALTH_KEY: str = "ai_service:health_status"
+    AI_DETECTION_SOURCE_KEY: str = "ai_service:detection_source"
 
 # --- Main AppSettings Container ---
 
 class AppSettings(BaseSettings):
-    # Ignore extra fields like GPIO_PIN_* from the .env file
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "7.0.0-Dual-Modbus-IO"
+    PROJECT_VERSION: str = "9.0.0-Dynamic-AI-Switch"
     APP_ENV: Literal["development", "production"] = "development"
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
+    AI_DETECTION_SOURCE: Literal['rpi', 'usb'] = 'usb'
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
     UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
-    # CHANGED: Added new setting for default AI state
     AI_SERVICE_ENABLED_BY_DEFAULT: bool = True
 
 
@@ -108,12 +107,13 @@ class AppSettings(BaseSettings):
     SERVER: ServerSettings = ServerSettings()
     SECURITY: SecuritySettings = SecuritySettings()
     DATABASE: DatabaseSettings = DatabaseSettings()
-    OUTPUTS: OutputChannelSettings = OutputChannelSettings() # NEW
+    OUTPUTS: OutputChannelSettings = OutputChannelSettings()
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()
     ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
     LOGGING: LoggingSettings = LoggingSettings()
     CONVEYOR: ConveyorSettings = ConveyorSettings()
+    REDIS_KEYS: RedisKeys = RedisKeys() # Add the keys object
 
 @lru_cache()
 def get_settings() -> AppSettings:

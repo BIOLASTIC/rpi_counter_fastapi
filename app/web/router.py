@@ -2,6 +2,7 @@
 FINAL REVISION: The source of the Jinja2 TemplateNotFound error is fixed.
 - All template paths in this file have been corrected to remove the 'pages/'
   prefix, matching the new, simplified flat template directory structure.
+REVISED: The gallery routes now use a single, dynamic template.
 """
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -43,11 +44,9 @@ async def read_dashboard(
     }
     return NoCacheTemplateResponse(request, "dashboard.html", context)
 
-# --- NEW: Route for the profile management page ---
 @router.get("/profiles", response_class=HTMLResponse)
 async def read_profiles_page(request: Request):
     """Renders the main profile management page."""
-    # The page will be populated dynamically by JavaScript
     return NoCacheTemplateResponse(request, "profiles.html", {"request": request})
 
 @router.get("/status", response_class=HTMLResponse)
@@ -68,18 +67,24 @@ if 'rpi' in ACTIVE_CAMERA_IDS:
     async def read_live_view_rpi(request: Request):
         return NoCacheTemplateResponse(request, "live_view_rpi.html", {"request": request})
 
+    # --- THE FIX: Use the generic 'gallery.html' template ---
     @router.get("/gallery/rpi", response_class=HTMLResponse)
     async def read_gallery_rpi(request: Request):
-        return NoCacheTemplateResponse(request, "gallery_rpi.html", {"request": request})
+        # Pass the camera_id to the template
+        context = {"request": request, "camera_id": "rpi", "camera_name": "RPi"}
+        return NoCacheTemplateResponse(request, "gallery.html", context)
 
 if 'usb' in ACTIVE_CAMERA_IDS:
     @router.get("/live-view/usb", response_class=HTMLResponse)
     async def read_live_view_usb(request: Request):
         return NoCacheTemplateResponse(request, "live_view_usb.html", {"request": request})
 
+    # --- THE FIX: Use the generic 'gallery.html' template ---
     @router.get("/gallery/usb", response_class=HTMLResponse)
     async def read_gallery_usb(request: Request):
-        return NoCacheTemplateResponse(request, "gallery_usb.html", {"request": request})
+        # Pass the camera_id to the template
+        context = {"request": request, "camera_id": "usb", "camera_name": "USB"}
+        return NoCacheTemplateResponse(request, "gallery.html", context)
 
 @router.get("/logs", response_class=HTMLResponse)
 async def read_logs_page(request: Request, session: AsyncSession = Depends(get_async_session)):

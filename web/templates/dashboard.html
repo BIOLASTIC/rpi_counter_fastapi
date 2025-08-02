@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.2">
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.3">
 
 <div class="dashboard-container">
 
+    <!-- Live Process View Card with Animation -->
     <div class="grid-card animation-card">
         <h3 class="card-title"><i class="bi bi-truck-front"></i> Live Process View</h3>
         <div id="animation-zone" data-animation-time="{{ animation_time }}">
-            <div id="conveyor-belt"></div>
+            <div id="conveyor-belt">
+                <!-- Box animations will be spawned here by JS -->
+            </div>
             <div id="conveyor-overlay-info">
                 <div class="info-box">
                     <span class="info-label">ON BELT</span>
@@ -26,6 +29,7 @@
         </div>
     </div>
 
+    <!-- Run Status Section -->
     <div class="grid-card run-status-card">
         <h3 class="card-title" style="justify-content: center;"><i class="bi bi-stack"></i> Run Status</h3>
         <div class="progress-container">
@@ -41,25 +45,23 @@
         <div class="status-line"><strong>Active Profile:</strong> <span class="badge" id="active-profile-display">None</span></div>
     </div>
     
+    <!-- Live Feeds Section (with GENERIC IDs) -->
     <div class="grid-card feeds-card">
         <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Feeds</h3>
         <div class="feeds-grid">
             <div class="camera-feed-container">
-                <div class="camera-title-overlay">USB CAM (RAW)</div>
-                <img id="live-camera-feed-usb" src="/api/v1/camera/stream/usb" alt="Live feed for camera usb">
+                <div class="camera-title-overlay" id="raw-feed-title">AI SOURCE (RAW)</div>
+                <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live raw camera feed">
             </div>
             <div class="camera-feed-container">
                 <div class="camera-title-overlay">AI DETECTION FEED</div>
-                <img id="live-ai-feed-usb" src="/api/v1/camera/ai_stream/usb" alt="Live AI feed for camera usb">
-                <div id="ai-offline-overlay-usb" class="camera-offline-overlay"><i class="bi bi-cpu"></i><span>OFFLINE</span></div>
-                <!-- Placeholder for the last detected object -->
-                <div id="ai-last-detection-display" class="camera-detection-info">
-                    <i class="bi bi-search"></i> Searching...
-                </div>
+                <img id="live-ai-feed" src="/static/images/placeholder.jpg" alt="Live AI processed feed">
+                <div id="ai-offline-overlay" class="camera-offline-overlay"><i class="bi bi-cpu"></i><span>OFFLINE</span></div>
             </div>
         </div>
     </div>
 
+    <!-- Main Control Section -->
     <div class="grid-card control-card">
         <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
         <div class="control-grid">
@@ -97,9 +99,11 @@
         </div>
     </div>
 
+    <!-- System Status & Manual Control Section -->
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
+             <!-- Status Indicators -->
              <div class="status-item">
                  <div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div>
                  <div class="status-badge" id="status-sensor-1">clear</div>
@@ -116,6 +120,7 @@
                  <div class="status-label"><i class="bi bi-robot"></i> AI Service Health</div>
                  <div class="status-badge" id="status-ai-service">offline</div>
              </div>
+             <!-- Manual Toggles -->
              <div class="status-item manual-control-toggle">
                  <div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div>
                  <label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label>
@@ -136,6 +141,16 @@
                  <div class="status-label"><i class="bi bi-robot"></i> AI Detection</div>
                  <label class="toggle-switch"><input type="checkbox" id="control-ai-toggle"><span class="toggle-slider"></span></label>
              </div>
+
+             <!-- THE FIX IS HERE: This block was missing but is now correctly included -->
+             <div class="status-item ai-source-control">
+                <div class="status-label"><i class="bi bi-camera-reels-fill"></i> AI Source</div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="ai-source-btn-rpi" data-source="rpi">RPi CAM</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="ai-source-btn-usb" data-source="usb">USB CAM</button>
+                </div>
+             </div>
+             <!-- End of the fix -->
          </div>
     </div>
 
@@ -143,5 +158,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=1.2"></script>
+<script src="/static/js/dashboard_v3.js?v=1.3"></script>
 {% endblock %}

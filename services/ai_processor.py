@@ -1,20 +1,13 @@
 """
-Standalone AI Processing Service - FINAL PRODUCTION VERSION (v8)
+Standalone AI Processing Service - FINAL PRODUCTION VERSION (v7)
 
-This version uses a robust message-draining loop to solve the "slow consumer"
-problem. When the service starts, it discards any backlog of frames and only
-processes the most recent one, preventing the Redis output buffer from
-overflowing and causing a disconnect. This is the definitive solution.
+REVISED: This version implements a robust message-draining loop. This is the
+definitive fix for the "slow consumer" problem where Redis would disconnect the
+service due to its output buffer filling up.
 
-ADDED: Redis heartbeat to signal health status to the main application.
-CHANGED: Now respects a global 'ai_service:enabled' Redis key to allow for remote toggling.
-FIXED: Connects to Redis with decode_responses=False to correctly handle raw binary JPEG data.
-NEW: Publishes the name of the last detected object to a Redis key for the UI.
-UPDATED: Custom class names for 'OBJ' and 'NO_OBJ' as per the new model.
-CORRECTED: Fixed 'TypeError: cannot unpack non-iterable coroutine object' by making the
-           CPU-bound 'process_frame' function synchronous ('def') and handling the
-           async Redis SET command in the main event loop.
-DEBUG-TUNING: Lowered confidence threshold to help diagnose detection issues in poor lighting.
+The new logic ensures that only the most recent frame is processed, discarding any
+backlog that accumulates while the AI is busy. This keeps the Redis connection
+stable and the AI feed responsive.
 """
 import cv2
 import numpy as np
@@ -23,89 +16,84 @@ import asyncio
 import traceback
 import onnxruntime as ort
 from redis.exceptions import ConnectionError, TimeoutError
-from typing import Optional, Tuple
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Literal
 
-# --- Configuration ---
+# --- Self-Contained Configuration ---
+class AiProcessorSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
+    AI_DETECTION_SOURCE: Literal['rpi', 'usb'] = 'usb'
+
+settings = AiProcessorSettings()
+
+# --- Configuration & Constants ---
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-INPUT_FRAME_CHANNEL = "camera:frames:usb"
-OUTPUT_STREAM_CHANNEL = "ai_stream:frames:usb"
 MODEL_PATH = "yolov8n.onnx"
+CONFIDENCE_THRESHOLD = 0.5
 
-# --- DEBUGGING CHANGE HERE ---
-# The original value was 0.5 (50% confidence). By lowering it to 0.2 (20%),
-# we can see if the model is trying to detect things but isn't very sure.
-# If you see boxes now, it confirms the problem is lighting and/or model training.
-CONFIDENCE_THRESHOLD = 0.2
-
+# Redis Keys
+AI_DETECTION_SOURCE_KEY = "ai_service:detection_source"
 AI_HEALTH_KEY = "ai_service:health_status"
-AI_HEALTH_EXPIRY_SEC = 10 
-AI_HEARTBEAT_INTERVAL_SEC = 2
 AI_ENABLED_KEY = "ai_service:enabled"
-AI_LAST_DETECTION_KEY = "ai_service:last_detection"
-AI_LAST_DETECTION_EXPIRY_SEC = 5
 
 
-# --- USER MODEL UPDATE ---
 COCO_CLASSES = [
-    'NO_OBJ', 
-    'OBJ'
+    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
+    'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
+    'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
+    'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+    'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
+    'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+    'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
+    'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
+    'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink',
+    'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier',
+    'toothbrush'
 ]
-TARGET_CLASSES = {'OBJ'}
+TARGET_CLASSES = {'bottle', 'cup', 'cell phone', 'book', 'box'}
 
-
-def process_frame_sync(frame_data: bytes, session) -> Tuple[Optional[bytes], Optional[str]]:
-    """
-    Synchronous, CPU-bound function to process a frame.
-    It returns the annotated image buffer and the name of the first detected object.
-    """
-    model_height, model_width = session.get_inputs()[0].shape[2:]
+def process_frame_sync(frame_data: bytes, session, model_width, model_height):
+    """Synchronous, CPU-bound function to process a single image frame."""
     np_array = np.frombuffer(frame_data, np.uint8)
     image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
-    if image is None: return None, None
-
+    if image is None: return None
     original_height, original_width, _ = image.shape
     input_image = cv2.resize(image, (model_width, model_height))
     input_image = input_image.transpose(2, 0, 1)
     input_data = np.expand_dims(input_image, axis=0).astype(np.float32) / 255.0
-
     outputs = session.run(None, {session.get_inputs()[0].name: input_data})
     output_data = outputs[0][0].T
-
-    detected_label = None
     for row in output_data:
         confidence = row[4:].max()
         if confidence < CONFIDENCE_THRESHOLD: continue
         class_id = int(row[4:].argmax())
         label = COCO_CLASSES[class_id]
-
-        if label in TARGET_CLASSES:
-            if detected_label is None:
-                detected_label = label
-            
-            xc, yc, w, h = row[:4]
-            x1 = int((xc - w / 2) * original_width / model_width)
-            y1 = int((yc - h / 2) * original_height / model_height)
-            x2 = int((xc + w / 2) * original_width / model_width)
-            y2 = int((yc + h / 2) * original_height / model_height)
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(image, f"{label} {confidence:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
+        if label not in TARGET_CLASSES: continue
+        xc, yc, w, h = row[:4]
+        x1 = int((xc - w / 2) * original_width / model_width)
+        y1 = int((yc - h / 2) * original_height / model_height)
+        x2 = int((xc + w / 2) * original_width / model_width)
+        y2 = int((yc + h / 2) * original_height / model_height)
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image, f"{label} {confidence:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    return buffer.tobytes(), detected_label
-
+    return buffer.tobytes()
 
 async def main():
     print("--- Starting Standalone AI Processor Service ---")
     try:
         session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
-        print(f"   ✅ Custom ONNX Model Loaded.")
+        input_details = session.get_inputs()[0]
+        model_height, model_width = input_details.shape[2], input_details.shape[3]
+        print(f"   ✅ ONNX Model Loaded. Input: {model_width}x{model_height}")
     except Exception as e:
-        print(f"❌ FATAL ERROR: Could not load ONNX model: {e}")
-        return
+        print(f"❌ FATAL ERROR: Could not load ONNX model: {e}"); return
 
     while True:
-        redis_client, str_redis_client, exit_reason = None, None, None
+        redis_client = None
+        str_redis_client = None
+        exit_reason = None
         try:
             print("Connecting to Redis...")
             redis_client = redis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}", health_check_interval=30, decode_responses=False)
@@ -114,50 +102,66 @@ async def main():
             print("✅ Redis connection successful.")
             
             async with redis_client.pubsub() as pubsub:
-                await pubsub.subscribe(INPUT_FRAME_CHANNEL)
-                print(f"✅ Subscribed to '{INPUT_FRAME_CHANNEL}'. Starting processing loop...")
+                subscribed_source = None
                 
                 while True:
-                    await asyncio.sleep(0.01)
-                    await str_redis_client.set(AI_HEALTH_KEY, "online", ex=AI_HEALTH_EXPIRY_SEC)
+                    target_source = await str_redis_client.get(AI_DETECTION_SOURCE_KEY) or settings.AI_DETECTION_SOURCE
+                    if target_source != subscribed_source:
+                        if subscribed_source:
+                            await pubsub.unsubscribe(f"camera:frames:{subscribed_source}")
+                            print(f"- Unsubscribed from 'camera:frames:{subscribed_source}'")
+                        await pubsub.subscribe(f"camera:frames:{target_source}")
+                        subscribed_source = target_source
+                        print(f"+ Subscribed to 'camera:frames:{subscribed_source}'. Processing...")
 
-                    is_enabled = await str_redis_client.get(AI_ENABLED_KEY)
-                    if is_enabled != "true":
-                        await asyncio.sleep(1) 
-                        continue
-
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
-                    if not message: continue
-
-                    while True:
-                        latest_message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.001)
-                        if latest_message is None: break
-                        message = latest_message
+                    if await str_redis_client.get(AI_ENABLED_KEY) != "true":
+                        await asyncio.sleep(1); continue
                     
-                    processed_buffer, detected_label = await asyncio.to_thread(
-                        process_frame_sync, message['data'], session
+                    await str_redis_client.set(AI_HEALTH_KEY, "online", ex=10)
+
+                    # --- THE DEFINITIVE FIX: DRAIN THE QUEUE ---
+                    # 1. Wait for the first message to arrive.
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if not message:
+                        continue # If no message in 1 sec, just loop to check health/source.
+
+                    # 2. Rapidly consume any other messages that have piled up.
+                    # This ensures we only process the most recent frame.
+                    while True:
+                        latest_msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.001)
+                        if latest_msg is None:
+                            break # The queue is empty, we have the latest message.
+                        message = latest_msg
+                    # --- END OF FIX ---
+                    
+                    processed_buffer = await asyncio.to_thread(
+                        process_frame_sync, message['data'], session, model_width, model_height
                     )
 
-                    if detected_label:
-                        await str_redis_client.set(AI_LAST_DETECTION_KEY, detected_label, ex=AI_LAST_DETECTION_EXPIRY_SEC)
-
                     if processed_buffer:
-                        await redis_client.publish(OUTPUT_STREAM_CHANNEL, processed_buffer)
+                        output_channel = f"ai_stream:frames:{subscribed_source}"
+                        await redis_client.publish(output_channel, processed_buffer)
 
-        except (ConnectionError, TimeoutError) as e: exit_reason = e
-        except KeyboardInterrupt as e: exit_reason = e; break
+        except (ConnectionError, TimeoutError) as e:
+            exit_reason = e
+            print(f"❌ Redis connection error: {e}. Reconnecting in 5 seconds...")
+        except KeyboardInterrupt as e:
+            exit_reason = e
+            print("\nExiting AI Processor...")
+            break
         except Exception as e:
             exit_reason = e
+            print(f"❌ CRITICAL ERROR in AI processing loop: {e}")
             traceback.print_exc()
         finally:
-            print(f"❌ Redis connection error: {exit_reason}. Reconnecting in 5 seconds...")
             if redis_client: await redis_client.aclose()
             if str_redis_client: await str_redis_client.aclose()
-            if isinstance(exit_reason, KeyboardInterrupt): break
+            if isinstance(exit_reason, KeyboardInterrupt):
+                break
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nProgram terminated manually.")
+        print("Program terminated manually.")
