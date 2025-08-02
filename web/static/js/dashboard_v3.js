@@ -8,7 +8,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function connectWebSocket() {
         socket = new WebSocket(wsUrl);
-
         socket.onopen = () => console.log("[WebSocket] Connection established.");
         socket.onclose = () => {
             console.error('[WebSocket] Connection died. Reconnecting in 3 seconds...');
@@ -56,16 +55,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // AI Source Buttons
         aiSourceBtnRpi: document.getElementById('ai-source-btn-rpi'),
         aiSourceBtnUsb: document.getElementById('ai-source-btn-usb'),
+        // --- NEW: Select the detection result element ---
+        aiDetectionResult: document.getElementById('ai-detection-result'),
     };
 
     // --- State Variables ---
     const progressCircleRadius = elements.progressPath.r.baseVal.value;
     const progressCircleCircumference = 2 * Math.PI * progressCircleRadius;
     elements.progressPath.style.strokeDasharray = `${progressCircleCircumference} ${progressCircleCircumference}`;
-    
-    // --- THE FIX: Add a state variable to track the in-flight count ---
     let lastInFlightCount = 0;
-
 
     // --- Event Handlers ---
     function handleWebSocketMessage(event) {
@@ -87,39 +85,42 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBadge(elements.sensor2Badge, data.sensor_2_status ? 'TRIGGERED' : 'CLEAR', { 'triggered': data.sensor_2_status, 'clear': !data.sensor_2_status });
         updateBadge(elements.ioModuleBadge, data.io_module_status, { 'ok': data.io_module_status === 'ok', 'error': data.io_module_status !== 'ok' });
         updateBadge(elements.aiServiceBadge, data.ai_service_status, { 'online': data.ai_service_status === 'online', 'offline': data.ai_service_status !== 'online' });
-        
         elements.aiOfflineOverlay.classList.toggle('hidden', data.ai_service_status === 'online');
         elements.countOnBelt.textContent = data.in_flight_count;
-
-        // Sync toggle switches with actual hardware state
         updateToggle(elements.conveyorToggle, data.conveyor_relay_status);
         updateToggle(elements.gateToggle, data.gate_relay_status);
         updateToggle(elements.diverterToggle, data.diverter_relay_status);
         updateToggle(elements.camlightToggle, data.camera_light_status);
         updateToggle(elements.aiToggle, data.ai_service_enabled);
-        
-        // Update video feeds AND the active button style
         updateVideoFeeds(data.ai_detection_source);
         updateActiveButton(data.ai_detection_source);
 
-        // --- THE FIX: Trigger the animation when a new box enters ---
-        // 1. Check if the in-flight count has increased.
         if (data.in_flight_count > lastInFlightCount) {
             spawnBox();
         }
-        // 2. Update the state for the next message.
         lastInFlightCount = data.in_flight_count;
+        
+        // --- NEW: Update the AI detection result text and style ---
+        const resultText = data.last_detection_result;
+        if (elements.aiDetectionResult) {
+            elements.aiDetectionResult.textContent = resultText.toUpperCase();
+            // Check for specific strings to apply styles
+            if (resultText === "No Object" || resultText === "---" || resultText === "AI Disabled") {
+                elements.aiDetectionResult.classList.add('no-object');
+                elements.aiDetectionResult.classList.remove('object-detected');
+            } else {
+                elements.aiDetectionResult.classList.add('object-detected');
+                elements.aiDetectionResult.classList.remove('no-object');
+            }
+        }
     }
 
     function updateOrchestrationStatus(data) {
         elements.conveyorMode.textContent = data.mode.toUpperCase();
         elements.conveyorBelt.classList.toggle('running', data.mode === 'Running');
-
         const profileName = data.active_profile || 'None';
         elements.activeProfileDisplay.textContent = profileName;
         elements.activeProfileDisplay.style.backgroundColor = profileName === 'None' ? 'var(--text-secondary)' : 'var(--accent-teal)';
-
-        // Update progress circle
         const target = data.target_count;
         const progress = data.run_progress;
         const percentage = (target > 0) ? Math.min((progress / target) * 100, 100) : 0;
@@ -127,17 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.progressPath.style.strokeDashoffset = offset;
         elements.progressPercentage.textContent = `${Math.floor(percentage)}%`;
         elements.progressDetails.textContent = `${progress} / ${target > 0 ? target : '∞'}`;
-
         elements.countExited.textContent = progress;
-
-        // --- THE FIX: Remove the old, incorrect animation trigger ---
-        // The animation is now handled by updateSystemStatus.
-        /*
-        if (progress > lastExitedCount) {
-            spawnBox();
-        }
-        lastExitedCount = progress;
-        */
     }
 
     function updateVideoFeeds(aiSource) {
@@ -145,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const rawSrc = `/api/v1/camera/stream/${aiSource}`;
         const aiSrc = `/api/v1/camera/ai_stream/${aiSource}`;
         const titleText = `${aiSource.toUpperCase()} CAM (RAW)`;
-
         if (elements.rawFeedImg.src.endsWith(rawSrc) === false) elements.rawFeedImg.src = rawSrc;
         if (elements.aiFeedImg.src.endsWith(aiSrc) === false) elements.aiFeedImg.src = aiSrc;
         if (elements.rawFeedTitle.textContent !== titleText) elements.rawFeedTitle.textContent = titleText;
@@ -175,7 +165,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Control Actions ---
     async function apiPost(url, body = {}) {
         try {
             const response = await fetch(url, {
@@ -197,13 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`Requesting AI source switch to: ${source.toUpperCase()}`);
         apiPost('/api/v1/system/ai/source', { source });
     }
-
     function startRun() {
         const profileId = elements.profileSelect.value;
-        if (!profileId) {
-            alert('Please select an Object Profile first.');
-            return;
-        }
+        if (!profileId) { alert('Please select an Object Profile first.'); return; }
         const payload = {
             object_profile_id: parseInt(profileId, 10),
             target_count: parseInt(elements.targetCountInput.value, 10),
@@ -212,15 +197,10 @@ document.addEventListener('DOMContentLoaded', () => {
         apiPost('/api/v1/orchestration/run/start', payload);
     }
     function stopRun() { apiPost('/api/v1/orchestration/run/stop'); }
-    function resetAll() {
-        if (confirm('Are you sure you want to perform a full system reset?')) {
-            apiPost('/api/v1/system/reset-all');
-        }
-    }
+    function resetAll() { if (confirm('Are you sure you want to perform a full system reset?')) apiPost('/api/v1/system/reset-all'); }
     function toggleOutput(name) { apiPost(`/api/v1/outputs/toggle/${name}`); }
     function toggleAiService() { apiPost('/api/v1/system/ai/toggle'); }
 
-    // --- Animation ---
     function spawnBox() {
         const box = document.createElement('div');
         box.className = 'box';
@@ -230,17 +210,14 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => box.remove(), transitTime * 1000);
     }
 
-    // --- Initial Setup ---
     elements.startRunBtn.addEventListener('click', startRun);
     elements.stopRunBtn.addEventListener('click', stopRun);
     elements.resetAllBtn.addEventListener('click', resetAll);
-    
     elements.conveyorToggle.addEventListener('change', () => toggleOutput('conveyor'));
     elements.gateToggle.addEventListener('change', () => toggleOutput('gate'));
     elements.diverterToggle.addEventListener('change', () => toggleOutput('diverter'));
     elements.camlightToggle.addEventListener('change', () => toggleOutput('camera_light'));
     elements.aiToggle.addEventListener('change', toggleAiService);
-
     elements.aiSourceBtnRpi.addEventListener('click', () => setAiSource('rpi'));
     elements.aiSourceBtnUsb.addEventListener('click', () => setAiSource('usb'));
 

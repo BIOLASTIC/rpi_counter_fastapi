@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.3">
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.4">
 
 <div class="dashboard-container">
 
@@ -9,22 +9,11 @@
     <div class="grid-card animation-card">
         <h3 class="card-title"><i class="bi bi-truck-front"></i> Live Process View</h3>
         <div id="animation-zone" data-animation-time="{{ animation_time }}">
-            <div id="conveyor-belt">
-                <!-- Box animations will be spawned here by JS -->
-            </div>
+            <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
-                <div class="info-box">
-                    <span class="info-label">ON BELT</span>
-                    <span class="info-value" id="count-on-belt">0</span>
-                </div>
-                <div class="info-box-main">
-                    <span class="info-label">PROCESSED THIS RUN</span>
-                    <span class="info-value-main" id="count-exited">0</span>
-                </div>
-                <div class="info-box">
-                    <span class="info-label">MODE</span>
-                    <span class="info-value" id="conveyor-mode">STOPPED</span>
-                </div>
+                <div class="info-box"><span class="info-label">ON BELT</span><span class="info-value" id="count-on-belt">0</span></div>
+                <div class="info-box-main"><span class="info-label">PROCESSED THIS RUN</span><span class="info-value-main" id="count-exited">0</span></div>
+                <div class="info-box"><span class="info-label">MODE</span><span class="info-value" id="conveyor-mode">STOPPED</span></div>
             </div>
         </div>
     </div>
@@ -45,7 +34,7 @@
         <div class="status-line"><strong>Active Profile:</strong> <span class="badge" id="active-profile-display">None</span></div>
     </div>
     
-    <!-- Live Feeds Section (with GENERIC IDs) -->
+    <!-- Live Feeds Section -->
     <div class="grid-card feeds-card">
         <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Feeds</h3>
         <div class="feeds-grid">
@@ -57,6 +46,11 @@
                 <div class="camera-title-overlay">AI DETECTION FEED</div>
                 <img id="live-ai-feed" src="/static/images/placeholder.jpg" alt="Live AI processed feed">
                 <div id="ai-offline-overlay" class="camera-offline-overlay"><i class="bi bi-cpu"></i><span>OFFLINE</span></div>
+                
+                <!-- NEW: Div for the detection result text -->
+                <div class="detection-result-overlay">
+                    <div id="ai-detection-result" class="detection-text">---</div>
+                </div>
             </div>
         </div>
     </div>
@@ -67,34 +61,16 @@
         <div class="control-grid">
             <div class="control-section">
                 <h4 class="section-title">1. Select Recipe</h4>
-                <div class="form-group">
-                    <label for="object-profile-select">Object Profile</label>
-                    <select id="object-profile-select" class="form-select">
-                        <option value="">-- Select a Profile --</option>
-                        {% for p in object_profiles %}
-                        <option value="{{ p.id }}">{{ p.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                <div class="form-group"><label for="object-profile-select">Object Profile</label><select id="object-profile-select" class="form-select"><option value="">-- Select a Profile --</option>{% for p in object_profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
             </div>
             <div class="control-section">
                 <h4 class="section-title">2. Configure Run</h4>
-                <div class="form-group">
-                    <label for="target-count-input">Target Count (0 for ∞)</label>
-                    <input type="number" class="form-control" id="target-count-input" value="10" min="0">
-                </div>
-                 <div class="form-group" style="margin-top: 1rem;">
-                    <label for="post-batch-delay-input">Post-Run Pause (s)</label>
-                    <input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0">
-                </div>
+                <div class="form-group"><label for="target-count-input">Target Count (0 for ∞)</label><input type="number" class="form-control" id="target-count-input" value="10" min="0"></div>
+                <div class="form-group" style="margin-top: 1rem;"><label for="post-batch-delay-input">Post-Run Pause (s)</label><input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0"></div>
             </div>
             <div class="control-section">
                 <h4 class="section-title">3. Execute</h4>
-                <div class="control-buttons">
-                    <button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
-                    <button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
-                    <button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button>
-                </div>
+                <div class="control-buttons"><button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button><button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button><button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button></div>
             </div>
         </div>
     </div>
@@ -103,46 +79,15 @@
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
-             <!-- Status Indicators -->
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div>
-                 <div class="status-badge" id="status-sensor-1">clear</div>
-             </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div>
-                 <div class="status-badge" id="status-sensor-2">clear</div>
-             </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-cpu"></i> IO Module</div>
-                 <div class="status-badge" id="status-io-module">--</div>
-             </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-robot"></i> AI Service Health</div>
-                 <div class="status-badge" id="status-ai-service">offline</div>
-             </div>
-             <!-- Manual Toggles -->
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label>
-             </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-gate-toggle"><span class="toggle-slider"></span></label>
-             </div>
-              <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-exclude"></i> Diverter</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label>
-             </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-camlight-toggle"><span class="toggle-slider"></span></label>
-             </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-robot"></i> AI Detection</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-ai-toggle"><span class="toggle-slider"></span></label>
-             </div>
-
-             <!-- THE FIX IS HERE: This block was missing but is now correctly included -->
+             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div><div class="status-badge" id="status-sensor-1">clear</div></div>
+             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div><div class="status-badge" id="status-sensor-2">clear</div></div>
+             <div class="status-item"><div class="status-label"><i class="bi bi-cpu"></i> IO Module</div><div class="status-badge" id="status-io-module">--</div></div>
+             <div class="status-item"><div class="status-label"><i class="bi bi-robot"></i> AI Service Health</div><div class="status-badge" id="status-ai-service">offline</div></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div><label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div><label class="toggle-switch"><input type="checkbox" id="control-gate-toggle"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-exclude"></i> Diverter</div><label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div><label class="toggle-switch"><input type="checkbox" id="control-camlight-toggle"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-robot"></i> AI Detection</div><label class="toggle-switch"><input type="checkbox" id="control-ai-toggle"><span class="toggle-slider"></span></label></div>
              <div class="status-item ai-source-control">
                 <div class="status-label"><i class="bi bi-camera-reels-fill"></i> AI Source</div>
                 <div class="btn-group" role="group">
@@ -150,13 +95,11 @@
                     <button type="button" class="btn btn-sm btn-outline-primary" id="ai-source-btn-usb" data-source="usb">USB CAM</button>
                 </div>
              </div>
-             <!-- End of the fix -->
          </div>
     </div>
-
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=1.3"></script>
+<script src="/static/js/dashboard_v3.js?v=1.4"></script>
 {% endblock %}

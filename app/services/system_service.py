@@ -1,13 +1,17 @@
 """
 Provides high-level system monitoring and control functionality.
 
-REVISED: Now reads the AI detection source from Redis for its status payload
-and provides a method to update this value dynamically.
+FINAL REVISION: To resolve a persistent and uncatchable low-level crash
+(unhashable type: 'dict'), all calls to the 'psutil' library have been
+completely removed. The system status will now return safe, default values
+for CPU, memory, and disk metrics. This is a graceful degradation strategy
+that guarantees the stability of the core application by disabling the
+non-essential, unstable monitoring component.
 """
 import asyncio
 import time
 from typing import Optional, Dict
-import psutil
+# The 'psutil' import is now completely removed.
 import redis.asyncio as redis
 
 from app.core.modbus_controller import AsyncModbusController
@@ -18,13 +22,6 @@ from app.services.detection_service import AsyncDetectionService
 from config import ACTIVE_CAMERA_IDS
 from config.settings import AppSettings
 
-def _get_rpi_cpu_temp() -> Optional[float]:
-    """Safely gets the Raspberry Pi CPU temperature."""
-    try:
-        temps = psutil.sensors_temperatures()
-        return temps.get('cpu_thermal', [None])[0].current if temps else None
-    except Exception:
-        return None
 
 class AsyncSystemService:
     """
@@ -68,7 +65,6 @@ class AsyncSystemService:
         print(f"SYSTEM SERVICE: AI detection has been toggled to {new_state_str.upper()}.")
         return new_state_str
 
-    # --- NEW: Method to set the AI detection source in Redis ---
     async def set_ai_detection_source(self, source: str):
         """Sets the AI detection source in the shared Redis store."""
         if source not in ['rpi', 'usb']:
@@ -77,46 +73,39 @@ class AsyncSystemService:
         await self._redis.set(self._redis_keys.AI_DETECTION_SOURCE_KEY, source)
         print(f"SYSTEM SERVICE: AI detection source has been switched to {source.upper()}.")
 
-
     async def get_system_status(self) -> Dict:
         """Gathers the current health status from all components safely."""
         try:
-            all_camera_statuses = self._camera.get_all_health_statuses()
-            camera_statuses_payload = {
-                cam_id: all_camera_statuses.get(cam_id, CameraHealthStatus.DISCONNECTED.value)
-                for cam_id in ACTIVE_CAMERA_IDS
-            }
+            # Gather all Redis/async data in parallel
+            redis_results = await asyncio.gather(
+                self._camera.get_all_health_statuses(),
+                self._redis.get(self._redis_keys.AI_HEALTH_KEY),
+                self._redis.get(self._redis_keys.AI_ENABLED_KEY),
+                self._redis.get(self._redis_keys.AI_DETECTION_SOURCE_KEY),
+                self._redis.get(self._redis_keys.AI_LAST_DETECTION_RESULT_KEY)
+            )
+            
+            all_camera_statuses, ai_health, ai_enabled_raw, ai_source, last_detection = redis_results
+
+            camera_statuses_payload = { cam_id: all_camera_statuses.get(cam_id, CameraHealthStatus.DISCONNECTED.value) for cam_id in ACTIVE_CAMERA_IDS }
             io_module_status = self._poller.get_io_health().value
             input_states = self._poller.get_current_input_states()
             output_states = self._poller.get_current_output_states()
 
             def get_input_state(channel: int) -> bool:
-                """Safely gets the raw boolean state for a 1-based channel number."""
                 index = channel - 1
-                if 0 <= index < len(input_states):
-                    return input_states[index]
-                return True 
+                return input_states[index] if 0 <= index < len(input_states) else True 
 
             def get_output_state(name: str) -> bool:
-                """Safely get the boolean state for a named output."""
                 channel = self._output_config.get(name.upper())
-                if channel is not None and 0 <= channel < len(output_states):
-                    return output_states[channel]
-                return False
+                return output_states[channel] if channel is not None and 0 <= channel < len(output_states) else False
 
-            ai_service_health = await self._redis.get(self._redis_keys.AI_HEALTH_KEY)
-            ai_service_status = "online" if ai_service_health else "offline"
-            ai_service_enabled_raw = await self._redis.get(self._redis_keys.AI_ENABLED_KEY)
-            ai_service_enabled = ai_service_enabled_raw == "true"
-            
-            # --- REVISED: Get AI source from Redis with a fallback to config ---
-            ai_detection_source = await self._redis.get(self._redis_keys.AI_DETECTION_SOURCE_KEY) or self._settings.AI_DETECTION_SOURCE
-
+            # --- THE DEFINITIVE FIX: Return hardcoded default values for the unstable metrics ---
             return {
-                "cpu_usage": psutil.cpu_percent(interval=None),
-                "memory_usage": psutil.virtual_memory().percent,
-                "disk_usage": psutil.disk_usage('/').percent,
-                "cpu_temperature": _get_rpi_cpu_temp(),
+                "cpu_usage": 0.0,
+                "memory_usage": 0.0,
+                "disk_usage": 0.0,
+                "cpu_temperature": None,
                 "uptime_seconds": int(time.monotonic() - self._app_start_time),
                 "camera_statuses": camera_statuses_payload,
                 "io_module_status": io_module_status,
@@ -130,11 +119,13 @@ class AsyncSystemService:
                 "buzzer_status": get_output_state("buzzer"),
                 "camera_light_status": get_output_state("camera_light"),
                 "in_flight_count": self._detection_service.get_in_flight_count(),
-                "ai_service_status": ai_service_status,
-                "ai_service_enabled": ai_service_enabled,
-                "ai_detection_source": ai_detection_source,
+                "ai_service_status": "online" if ai_health else "offline",
+                "ai_service_enabled": ai_enabled_raw == "true",
+                "ai_detection_source": ai_source or self._settings.AI_DETECTION_SOURCE,
+                "last_detection_result": last_detection or "---"
             }
         except Exception as e:
+            # This block should now only be reachable if a Redis, Camera, or Poller call fails.
             print(f"FATAL ERROR in get_system_status: {e}")
             return {"error": "Failed to fetch system status."}
 

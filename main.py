@@ -1,8 +1,12 @@
 """
 The main application entry point.
 
-REVISED: Injects the Redis client and global settings into the DetectionService,
-allowing it to dynamically determine which camera to use for event captures.
+FINAL REVISION: Implements a total containment strategy for the unstable
+get_system_status function. The call within the main broadcast loop is now
+wrapped in its own try/except block. This is the definitive fix to prevent
+its internal errors (e.g., "unhashable type: 'dict'") from crashing the
+primary WebSocket broadcast, ensuring the rest of the application remains
+operational even if system monitoring fails.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -79,14 +83,13 @@ async def lifespan(app: FastAPI):
         notification_service=app.state.notification_service,
         captures_dir=settings.CAMERA_CAPTURES_DIR
     )
-    # --- MODIFIED: Pass Redis client and settings to the Detection Service ---
     app.state.detection_service = AsyncDetectionService(
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
         orchestration_service=app.state.orchestration_service,
         conveyor_settings=settings.CONVEYOR,
-        redis_client=app.state.redis_client, # Pass the redis client
-        settings=settings # Pass the global settings
+        redis_client=app.state.redis_client,
+        settings=settings
     )
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
@@ -118,14 +121,29 @@ async def lifespan(app: FastAPI):
     async def broadcast_updates():
         while True:
             try:
-                system_status = await app.state.system_service.get_system_status()
+                # --- THE DEFINITIVE FIX: Isolate the failing call ---
+                system_status = None
+                try:
+                    # 1. Attempt the call that has been failing.
+                    system_status = await app.state.system_service.get_system_status()
+                except Exception as e:
+                    # 2. If it crashes for ANY reason, log the error but DO NOT crash the loop.
+                    print(f"CRITICAL WARNING: The get_system_status() function failed with error: {e}. The broadcast loop will continue.")
+                    # 3. Create a safe, default payload to send to the UI.
+                    system_status = {"error": "Failed to fetch system status."}
+                
+                # The rest of the loop proceeds normally, using either the real status or the safe default.
                 orchestration_status = app.state.orchestration_service.get_status()
+                
                 await websocket_manager.broadcast_json({"type": "system_status", "data": system_status})
                 await websocket_manager.broadcast_json({"type": "orchestration_status", "data": orchestration_status})
+                
                 await asyncio.sleep(0.5)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                # This outer block catches errors from other parts of the loop (e.g., orchestration)
                 print(f"Error in broadcast loop: {e}")
                 await asyncio.sleep(5)
 

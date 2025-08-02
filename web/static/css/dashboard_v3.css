@@ -14,7 +14,7 @@
     --accent-green: #22c55e;
     --accent-amber: #f59e0b;
     --accent-red: #ef4444;
-    --box-transit-time: 5s; 
+    --box-transit-time: 5s; /* Default, will be overridden by data attribute */
 }
 
 body {
@@ -90,7 +90,6 @@ body {
 .info-box-main .info-label { font-size: 1rem; }
 .info-box-main .info-value-main { font-size: 3rem; font-weight: 700; color: var(--accent-teal); }
 
-/* --- Keyframes for Animation --- */
 @keyframes scroll-background { from { background-position: 0 0, 20px 20px; } to { background-position: 40px 0, 60px 20px; } }
 @keyframes move-box { from { transform: translate(-100%, -50%); } to { transform: translate(calc(100vw - 200px), -50%); } }
 
@@ -132,25 +131,30 @@ body {
 .camera-offline-overlay.hidden { display: none; }
 .camera-offline-overlay i { font-size: 3rem; margin-bottom: 0.5rem; }
 
-/* --- NEW: Last Detection Info Box --- */
-.camera-detection-info {
-    position: absolute; z-index: 10; bottom: 8px; left: 8px; right: 8px;
-    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
-    color: #fff; padding: 8px 12px; border-radius: 0.5rem;
-    font-size: 0.9rem; font-weight: 500;
-    display: flex; align-items: center; gap: 0.5rem;
-    transition: opacity 0.3s, transform 0.3s;
-    opacity: 0; transform: translateY(10px);
+/* --- NEW: Styling for the detection result overlay --- */
+.detection-result-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 0.75rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    text-align: center;
+    z-index: 11; /* Make sure it's on top */
 }
-.camera-detection-info.visible {
-    opacity: 1;
-    transform: translateY(0);
+.detection-text {
+    font-size: 1.75rem; /* Big */
+    font-weight: 700; /* Bold */
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+    transition: color 0.3s ease;
 }
-.camera-detection-info .detected-object {
-    font-weight: 700;
-    color: var(--accent-amber);
-    text-transform: uppercase;
+.detection-text.object-detected {
+    color: var(--accent-green); /* Green for detected objects */
 }
+.detection-text.no-object {
+    color: var(--accent-amber); /* Amber/yellow for "No Object" */
+}
+/* --- End of new styles --- */
 
 
 /* --- Run Status Card --- */
