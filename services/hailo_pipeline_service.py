@@ -1,9 +1,5 @@
 """
-AI Pipeline Service for the Hailo AI HAT+ (Definitive, Final Version)
-
-This service reads raw frame data from stdin, performs inference, and uses
-OpenCV's DNN module for robust Non-Maximum Suppression (NMS) to correctly
-process the YOLOv8 output. It publishes the final, annotated frames to Redis.
+AI Pipeline Service for the Hailo AI HAT+ (Definitive, Final, Corrected Version)
 """
 import sys
 import cv2
@@ -13,24 +9,23 @@ import json
 import traceback
 from pathlib import Path
 
-# Setup project path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from config.settings import get_settings
 from hailo_platform import VDevice, HEF, ConfigureParams, HailoStreamInterface, InputVStreamParams, OutputVStreamParams, InferVStreams, FormatType
 
-# --- Load Configuration ---
 try:
     settings = get_settings()
+    # ... (rest of config loading is the same)
     MODEL_PATH = settings.AI_HAT.MODEL_PATH
     CONFIDENCE_THRESHOLD = settings.AI_HAT.CONFIDENCE_THRESHOLD
-    NMS_THRESHOLD = 0.45 # Standard NMS threshold
+    NMS_THRESHOLD = 0.45
     FRAME_WIDTH = settings.CAMERA.CAMERA_WIDTH
     FRAME_HEIGHT = settings.CAMERA.CAMERA_HEIGHT
     REDIS_HOST = 'localhost'
     REDIS_PORT = 6379
-    OUTPUT_CHANNEL = "ai_stream:frames:rpi" # AI feed has its own channel
+    OUTPUT_CHANNEL = "ai_stream:frames:rpi"
     HEALTH_KEY = settings.REDIS_KEYS.AI_HEALTH_KEY
     LAST_DETECTION_KEY = settings.REDIS_KEYS.AI_LAST_DETECTION_RESULT_KEY
 except Exception as e:
@@ -50,6 +45,7 @@ def main():
         return
 
     try:
+        # ... (rest of initialization is the same)
         print("--- Initializing Hailo AI Pipeline Service ---")
         hef = HEF(MODEL_PATH)
         input_vstream_info = hef.get_input_vstream_infos()[0]
@@ -75,34 +71,33 @@ def main():
         
         print("--- AI Pipeline running. Waiting for frames from stdin... ---")
         
+        yuv_frame_size = int(FRAME_WIDTH * FRAME_HEIGHT * 1.5)
+        
         with network_group.activate(network_group_params):
             with InferVStreams(network_group, input_vstreams_params, output_vstreams_params) as infer_pipeline:
                 while True:
                     try:
-                        frame_bytes = sys.stdin.buffer.read(FRAME_WIDTH * FRAME_HEIGHT * 3)
+                        frame_bytes = sys.stdin.buffer.read(yuv_frame_size)
                         if not frame_bytes: break
 
-                        original_frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((FRAME_HEIGHT, FRAME_WIDTH, 3))
+                        # Convert raw YUV420 bytes to BGR format for processing
+                        yuv_frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((int(FRAME_HEIGHT * 1.5), FRAME_WIDTH))
+                        bgr_frame = cv2.cvtColor(yuv_frame, cv2.COLOR_YUV2BGR_I420)
                         
-                        # --- Run Inference ---
-                        results = infer_pipeline.infer({input_vstream_info.name: original_frame})
+                        # The AI model expects RGB, so we do a final conversion
+                        rgb_frame = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
+                        
+                        results = infer_pipeline.infer({input_vstream_info.name: rgb_frame})
                         detections = results[output_vstream_info.name]
                         
-                        # --- Post-Processing with OpenCV NMS ---
-                        # Transpose the output from (1, 84, 8400) to (8400, 84)
                         outputs = np.transpose(np.squeeze(detections))
-                        
-                        boxes = []
-                        confidences = []
-                        class_ids = []
+                        boxes, confidences, class_ids = [], [], []
                         
                         for out in outputs:
                             confidence = out[4]
                             if confidence > CONFIDENCE_THRESHOLD:
                                 scores = out[5:]
                                 class_id = np.argmax(scores)
-                                
-                                # Bbox is center_x, center_y, width, height
                                 cx, cy, w, h = out[0], out[1], out[2], out[3]
                                 x = int((cx - w / 2) * FRAME_WIDTH)
                                 y = int((cy - h / 2) * FRAME_HEIGHT)
@@ -110,7 +105,6 @@ def main():
                                 confidences.append(float(confidence))
                                 class_ids.append(class_id)
                         
-                        # Apply Non-Maximum Suppression
                         indices = cv2.dnn.NMSBoxes(boxes, confidences, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)
                         
                         detected_objects = []
@@ -119,24 +113,21 @@ def main():
                                 x, y, w, h = boxes[i]
                                 label = class_names[class_ids[i]]
                                 confidence = confidences[i]
-                                
                                 detected_objects.append(f"{label} ({confidence:.0%})")
-                                cv2.rectangle(original_frame, (x, y), (x + w, y + h), (34, 197, 94), 2)
-                                cv2.putText(original_frame, f"{label} {confidence:.1%}", (x, y - 5), 
+                                cv2.rectangle(bgr_frame, (x, y), (x + w, y + h), (34, 197, 94), 2)
+                                cv2.putText(bgr_frame, f"{label} {confidence:.1%}", (x, y - 5), 
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (34, 197, 94), 2)
                         
-                        # Publish results to Redis
                         if detected_objects:
                             redis_client.set(LAST_DETECTION_KEY, ", ".join(detected_objects), ex=20)
 
-                        _, buffer = cv2.imencode('.jpg', original_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                        # Encode the BGR frame for publishing
+                        _, buffer = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
                         redis_client.publish(OUTPUT_CHANNEL, buffer.tobytes())
                         redis_client.set(HEALTH_KEY, "online", ex=10)
 
                     except KeyboardInterrupt: break
-                    except Exception:
-                        print("--- ERROR during frame processing ---")
-                        traceback.print_exc()
+                    except Exception: traceback.print_exc()
     
     print("\n--- AI Pipeline shutting down. ---")
 

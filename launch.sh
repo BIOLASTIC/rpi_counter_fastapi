@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # ==============================================================================
-# Definitive Launcher for the AI HAT+ Box Counter System (Final Version)
-# - Specifies the correct BGR888 raw video format from rpicam-vid
-# - Creates a robust, fully-specified GStreamer pipeline for the raw feed
+# Definitive Launcher for the AI HAT+ Box Counter System (Final, Corrected Version)
+# - Uses the correct '--video-format YUV420' argument for rpicam-vid
 # - Launches all services in the correct order
 # - Manages shutdown of all processes on exit
 # ==============================================================================
@@ -16,11 +15,7 @@ cleanup() {
     echo "--- Shutting down all services... ---"
     # Kill all processes in the script's process group
     pkill -P $$
-    # A final, more forceful cleanup
     pkill -f uvicorn
-    pkill -f hailo_pipeline_service.py
-    pkill -f raw_frame_publisher.py
-    pkill -f rpicam-vid
     echo "--- Shutdown complete. ---"
 }
 
@@ -57,16 +52,14 @@ FIFO_PIPE=/tmp/raw_pipe
 rm -f $FIFO_PIPE
 mkfifo $FIFO_PIPE
 
-# Launch the Raw Feed Publisher in the background. It reads raw BGR888 frames
-# from the named pipe and encodes them to JPEG before publishing.
 echo "[Launcher] Raw Feed Publisher starting..."
 python3 services/raw_frame_publisher.py < $FIFO_PIPE &
 
 echo "[Launcher] AI Feed Pipeline starting..."
 
 # --- DEFINITIVE FIX ---
-# 1. Use '--format BGR888' to output raw, uncompressed frames that Python/OpenCV can directly use.
-# 2. This single stream is then duplicated by 'tee'.
-rpicam-vid --camera 0 --width $CAMERA_WIDTH --height $CAMERA_HEIGHT --framerate $CAMERA_FRAMERATE --format BGR888 -t 0 --inline $EXPOSURE_SETTINGS -o - \
+# 1. Use '--video-format YUV420' to output the raw, uncompressed video format.
+# 2. This is the correct argument that rpicam-vid understands.
+rpicam-vid --camera 0 --width $CAMERA_WIDTH --height $CAMERA_HEIGHT --framerate $CAMERA_FRAMERATE --video-format YUV420 -t 0 --inline $EXPOSURE_SETTINGS -o - \
     | tee $FIFO_PIPE \
     | python3 services/hailo_pipeline_service.py

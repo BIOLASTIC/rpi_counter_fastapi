@@ -1,8 +1,5 @@
 """
-Raw Frame Publisher Service (BGR888 to JPEG Version)
-
-This service reads raw BGR888 frame data from stdin, encodes it to JPEG,
-and publishes it to a Redis channel for the web UI's "RAW" camera feed.
+Raw Frame Publisher Service (YUV420 to JPEG Version)
 """
 import sys
 import cv2
@@ -11,13 +8,11 @@ import redis
 import traceback
 from pathlib import Path
 
-# Setup project path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from config.settings import get_settings
 
-# --- Load Configuration ---
 try:
     settings = get_settings()
     FRAME_WIDTH = settings.CAMERA.CAMERA_WIDTH
@@ -38,27 +33,25 @@ def main():
         print(f"[Raw Publisher] FATAL: Could not connect to Redis. Error: {e}")
         return
 
+    # For YUV420, the frame size is 1.5 times the width * height
+    yuv_frame_size = int(FRAME_WIDTH * FRAME_HEIGHT * 1.5)
+    
     while True:
         try:
-            # Read a single raw BGR888 frame from the stdin pipeline
-            frame_bytes = sys.stdin.buffer.read(FRAME_WIDTH * FRAME_HEIGHT * 3)
-            if not frame_bytes:
-                print("[Raw Publisher] Input stream finished.")
-                break
+            frame_bytes = sys.stdin.buffer.read(yuv_frame_size)
+            if not frame_bytes: break
             
-            # Convert raw bytes to a NumPy array for OpenCV
-            original_frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((FRAME_HEIGHT, FRAME_WIDTH, 3))
+            # Create a 1D numpy array and then reshape to the correct YUV dimensions
+            yuv_frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((int(FRAME_HEIGHT * 1.5), FRAME_WIDTH))
 
-            # Encode the frame to JPEG format
-            _, buffer = cv2.imencode('.jpg', original_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-
-            # Publish the JPEG bytes to Redis
+            # Convert from YUV I420 format to BGR for JPEG encoding
+            bgr_frame = cv2.cvtColor(yuv_frame, cv2.COLOR_YUV2BGR_I420)
+            
+            _, buffer = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             redis_client.publish(OUTPUT_CHANNEL, buffer.tobytes())
 
-        except KeyboardInterrupt:
-            break
+        except KeyboardInterrupt: break
         except Exception:
-            print("[Raw Publisher] --- ERROR during frame publishing ---")
             traceback.print_exc()
             break
             
