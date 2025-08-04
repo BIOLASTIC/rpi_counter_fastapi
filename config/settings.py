@@ -2,48 +2,50 @@ from functools import lru_cache
 from typing import Literal, Dict
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+
+# Define the absolute path to the .env file
+ENV_PATH = Path(__file__).parent.parent / ".env"
+
+# Define a base configuration that ALL settings classes will use
+BASE_CONFIG_DICT = {
+    'env_file': str(ENV_PATH),
+    'extra': 'ignore',
+    'case_sensitive': False
+}
 
 # --- Nested Settings Classes ---
 
 class ServerSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SERVER_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='SERVER_')
+    # ... (rest of the class is unchanged)
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     SECRET_KEY: str = Field(..., min_length=32)
 
 class SecuritySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SECURITY_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='SECURITY_')
     API_KEY: str
 
 class DatabaseSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='DB_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='DB_')
     URL: str = "sqlite+aiosqlite:///./data/box_counter.db"
     ECHO: bool = False
 
-class BaseCameraSettings(BaseSettings):
-    RESOLUTION_WIDTH: int = 1280
-    RESOLUTION_HEIGHT: int = 720
-    FPS: int = 30
-    JPEG_QUALITY: int = Field(90, ge=10, le=100)
+class AiHatSettings(BaseSettings):
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='AI_HAT_')
+    MODEL_PATH: str
+    CONFIDENCE_THRESHOLD: float
 
-class RpiCameraSettings(BaseCameraSettings):
-    model_config = SettingsConfigDict(env_prefix='CAMERA_RPI_', case_sensitive=False)
-    ID: str = ""
-    SHUTTER_SPEED: int = Field(0, ge=0)
-    ISO: int = Field(0, ge=0)
-    MANUAL_FOCUS: float = Field(0.0, ge=0.0)
-
-class UsbCameraSettings(BaseCameraSettings):
-    model_config = SettingsConfigDict(env_prefix='CAMERA_USB_', case_sensitive=False)
-    DEVICE_INDEX: int = 0
-    EXPOSURE: int = 0
-    GAIN: int = 0
-    BRIGHTNESS: int = Field(128, ge=0, le=255)
-    AUTOFOCUS: bool = True
-    WHITE_BALANCE_TEMP: int = 0
+class CameraPipelineSettings(BaseSettings):
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT)
+    CAMERA_WIDTH: int = 1280
+    CAMERA_HEIGHT: int = 720
+    CAMERA_FRAMERATE: int = 30
 
 class OutputChannelSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='OUTPUTS_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='OUTPUTS_')
+    # ... (rest of the class is unchanged)
     CONVEYOR: int = 0
     GATE: int = 1
     DIVERTER: int = 2
@@ -53,7 +55,8 @@ class OutputChannelSettings(BaseSettings):
     BUZZER: int = 6
 
 class ModbusSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='MODBUS_')
+    # ... (rest of the class is unchanged)
     PORT: str = "/dev/ttyUSB0"
     BAUDRATE: int = 9600
     DEVICE_ADDRESS_INPUTS: int = 1
@@ -62,52 +65,49 @@ class ModbusSettings(BaseSettings):
     POLLING_MS: int = 50
 
 class SensorSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='SENSORS_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='SENSORS_')
     ENTRY_CHANNEL: int = 1
     EXIT_CHANNEL: int = 3
 
 class OrchestrationSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='ORCHESTRATION_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='ORCHESTRATION_')
     POST_BATCH_DELAY_SEC: int = 5
 
 class LoggingSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='LOGGING_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='LOGGING_')
     VERBOSE_LOGGING: bool = False
 
 class ConveyorSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT, env_prefix='CONVEYOR_')
     SPEED_M_PER_SEC: float = 0.5
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
 
 class RedisKeys(BaseSettings):
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT)
     AI_ENABLED_KEY: str = "ai_service:enabled"
     AI_HEALTH_KEY: str = "ai_service:health_status"
     AI_DETECTION_SOURCE_KEY: str = "ai_service:detection_source"
-    # --- NEW: Add a key for the latest detection result text ---
+    # --- DEFINITIVE FIX: Add the missing key definition ---
     AI_LAST_DETECTION_RESULT_KEY: str = "ai_service:last_detection_result"
 
+
 # --- Main AppSettings Container ---
-
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
-
+    model_config = SettingsConfigDict(**BASE_CONFIG_DICT)
+    # ... (rest of the class is unchanged)
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "10.0.0-Live-Detection-Text"
+    PROJECT_VERSION: str = "12.3.0-Last-Detection-Fix"
     APP_ENV: Literal["development", "production"] = "development"
-    CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
-    AI_DETECTION_SOURCE: Literal['rpi', 'usb'] = 'usb'
-    CAMERA_TRIGGER_DELAY_MS: int = 100
+    AI_DETECTION_SOURCE: Literal['rpi'] = 'rpi'
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
     UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
     AI_SERVICE_ENABLED_BY_DEFAULT: bool = True
 
-
-    # Nested configuration objects
-    CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()
-    CAMERA_USB: UsbCameraSettings = UsbCameraSettings()
     SERVER: ServerSettings = ServerSettings()
     SECURITY: SecuritySettings = SecuritySettings()
     DATABASE: DatabaseSettings = DatabaseSettings()
+    AI_HAT: AiHatSettings = AiHatSettings()
+    CAMERA: CameraPipelineSettings = CameraPipelineSettings()
     OUTPUTS: OutputChannelSettings = OutputChannelSettings()
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()

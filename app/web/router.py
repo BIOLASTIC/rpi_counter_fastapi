@@ -13,6 +13,8 @@ from sqlalchemy.orm import selectinload
 from app.models import get_async_session, EventLog, ObjectProfile
 from config import settings, ACTIVE_CAMERA_IDS
 
+# The erroneous import 'from .connection_manager import manager' has been removed.
+
 router = APIRouter(tags=["Web Dashboard"])
 
 def NoCacheTemplateResponse(request: Request, name: str, context: dict):

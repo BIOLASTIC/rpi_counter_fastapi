@@ -27,7 +27,7 @@ settings = AiProcessorSettings()
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 MODEL_PATH = "yolov8n.onnx"
-CONFIDENCE_THRESHOLD = 0.5
+CONFIDENCE_THRESHOLD = 0.7
 
 # Redis Keys
 AI_DETECTION_SOURCE_KEY = "ai_service:detection_source"
@@ -36,8 +36,8 @@ AI_ENABLED_KEY = "ai_service:enabled"
 AI_LAST_DETECTION_RESULT_KEY = "ai_service:last_detection_result" # Use new key
 
 # Your custom class list
-CUSTOM_CLASSES = [ 'bottle', 'book', 'cup' ] # Example
-TARGET_CLASSES = {'bottle', 'book', 'cup'} # Example
+CUSTOM_CLASSES = [ 'tissue-paper' ] # Example
+TARGET_CLASSES = {'tissue-paper'} # Example
 
 
 def process_frame_sync(frame_data: bytes, session, model_width, model_height):
