@@ -59,8 +59,6 @@ coverage.xml
 .idea/
 
 # Environment variables
-.env
-.env.*
 !.env.example
 
 # Data, Logs, and Databases
