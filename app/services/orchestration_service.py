@@ -1,21 +1,25 @@
 """
 Service for controlling the high-level orchestration of production runs.
 
-REVISED: Now reads the AI detection source from Redis to ensure it sends
-camera profile commands to the correct, dynamically-switched camera service.
+REVISED: Removed dependency on a specific AI source. Camera profile commands
+are now broadcast to all active cameras simultaneously.
+
+DEFINITIVE FIX: The __init__ method now correctly accepts the 'settings'
+object, which it requires to function properly.
 """
 import asyncio
+import json
 from enum import Enum
 from typing import Optional
-import json
 
+import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-import redis.asyncio as redis
 
 from app.core.modbus_controller import AsyncModbusController
 from app.models.profiles import ObjectProfile
+from config import ACTIVE_CAMERA_IDS, settings # Keep global import for type hinting if needed
 from config.settings import AppSettings
 
 
@@ -37,13 +41,12 @@ class AsyncOrchestrationService:
         modbus_controller: AsyncModbusController,
         db_session_factory,
         redis_client: redis.Redis,
-        settings: AppSettings
+        app_settings: AppSettings  # <-- CORRECTED: Accept the settings object
     ):
         self._io = modbus_controller
         self._get_db_session = db_session_factory
         self._redis = redis_client
-        self._settings = settings
-        self._redis_keys = settings.REDIS_KEYS # Use centralized keys
+        self._settings = app_settings # <-- CORRECTED: Use the passed settings
         self._mode = OperatingMode.STOPPED
         self._lock = asyncio.Lock()
         
@@ -53,6 +56,7 @@ class AsyncOrchestrationService:
         self._run_post_batch_delay_sec: int = 5
         self._current_count: int = 0
         
+        # This now correctly uses the injected settings
         self._output_map = self._settings.OUTPUTS
 
     async def initialize_hardware_state(self):
@@ -105,16 +109,14 @@ class AsyncOrchestrationService:
         self._active_profile = profile
         print(f"Orchestrator: Loaded Active Profile -> '{profile.name}' for new batch.")
 
-        # --- DYNAMIC CAMERA COMMAND ---
         cam_profile = self._active_profile.camera_profile
         command = { "action": "apply_settings", "settings": { "autofocus": cam_profile.autofocus, "exposure": cam_profile.exposure, "gain": cam_profile.gain, "white_balance_temp": cam_profile.white_balance_temp, "brightness": cam_profile.brightness } }
-        
-        # --- REVISED: Get AI source from Redis with a fallback ---
-        ai_source_camera = await self._redis.get(self._redis_keys.AI_DETECTION_SOURCE_KEY) or self._settings.AI_DETECTION_SOURCE
-        command_channel = f"camera:commands:{ai_source_camera}"
-        
-        print(f"Orchestrator: Sending profile settings via Redis to '{command_channel}'.")
-        await self._redis.publish(command_channel, json.dumps(command))
+        command_str = json.dumps(command)
+
+        for cam_id in ACTIVE_CAMERA_IDS:
+            command_channel = f"camera:commands:{cam_id}"
+            print(f"Orchestrator: Sending profile settings via Redis to '{command_channel}'.")
+            await self._redis.publish(command_channel, command_str)
         
         self._current_count = 0 
         self._mode = OperatingMode.RUNNING

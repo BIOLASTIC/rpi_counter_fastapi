@@ -1,26 +1,13 @@
 // /static/js/dashboard_v3.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    // --- WebSocket Connection ---
+document.addEventListener('DOMContentLoaded', function () {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
     let socket;
 
-    function connectWebSocket() {
-        socket = new WebSocket(wsUrl);
-
-        socket.onopen = () => console.log("[WebSocket] Connection established.");
-        socket.onclose = () => {
-            console.error('[WebSocket] Connection died. Reconnecting in 3 seconds...');
-            setTimeout(connectWebSocket, 3000);
-        };
-        socket.onerror = (error) => console.error(`[WebSocket] Error: ${error.message}`);
-        socket.onmessage = handleWebSocketMessage;
-    }
-
-    // --- Element Selectors ---
+    // --- THIS IS THE DEFINITIVE FIX ---
+    // The selector for the camera light toggle has been corrected to include the underscore.
     const elements = {
-        // Animation & Run Status
         animationZone: document.getElementById('animation-zone'),
         conveyorBelt: document.getElementById('conveyor-belt'),
         countOnBelt: document.getElementById('count-on-belt'),
@@ -30,178 +17,150 @@ document.addEventListener('DOMContentLoaded', () => {
         progressPercentage: document.getElementById('progress-percentage'),
         progressDetails: document.getElementById('progress-details'),
         activeProfileDisplay: document.getElementById('active-profile-display'),
-        // Live Feeds
-        rawFeedImg: document.getElementById('live-camera-feed'),
-        aiFeedImg: document.getElementById('live-ai-feed'),
-        rawFeedTitle: document.getElementById('raw-feed-title'),
-        aiOfflineOverlay: document.getElementById('ai-offline-overlay'),
-        // Controls
+        liveCameraFeed: document.getElementById('live-camera-feed'),
+        liveFeedTitle: document.getElementById('live-feed-title'),
         startRunBtn: document.getElementById('start-run-btn'),
         stopRunBtn: document.getElementById('stop-run-btn'),
         resetAllBtn: document.getElementById('reset-all-btn'),
         profileSelect: document.getElementById('object-profile-select'),
         targetCountInput: document.getElementById('target-count-input'),
         postBatchDelayInput: document.getElementById('post-batch-delay-input'),
-        // System Status Badges
-        sensor1Badge: document.getElementById('status-sensor-1'),
-        sensor2Badge: document.getElementById('status-sensor-2'),
-        ioModuleBadge: document.getElementById('status-io-module'),
-        aiServiceBadge: document.getElementById('status-ai-service'),
-        // Manual Control Toggles
-        conveyorToggle: document.getElementById('control-conveyor-toggle'),
-        gateToggle: document.getElementById('control-gate-toggle'),
-        diverterToggle: document.getElementById('control-diverter-toggle'),
-        camlightToggle: document.getElementById('control-camlight-toggle'),
-        aiToggle: document.getElementById('control-ai-toggle'),
-        // AI Source Buttons
-        aiSourceBtnRpi: document.getElementById('ai-source-btn-rpi'),
-        aiSourceBtnUsb: document.getElementById('ai-source-btn-usb'),
+        statusSensor1: document.getElementById('status-sensor-1'),
+        statusSensor2: document.getElementById('status-sensor-2'),
+        statusIoModule: document.getElementById('status-io-module'),
+        controlConveyorToggle: document.getElementById('control-conveyor-toggle'),
+        controlGateToggle: document.getElementById('control-gate-toggle'),
+        controlDiverterToggle: document.getElementById('control-diverter-toggle'),
+        controlCamlightToggle: document.getElementById('control-camera_light-toggle'), // <-- CORRECTED ID
     };
-
-    // --- State Variables ---
-    const progressCircleRadius = elements.progressPath.r.baseVal.value;
-    const progressCircleCircumference = 2 * Math.PI * progressCircleRadius;
-    elements.progressPath.style.strokeDasharray = `${progressCircleCircumference} ${progressCircleCircumference}`;
+    // --- END OF FIX ---
     
-    // --- THE FIX: Add a state variable to track the in-flight count ---
-    let lastInFlightCount = 0;
+    const progressCircleRadius = elements.progressPath.r.baseVal.value;
+    const progressCircumference = 2 * Math.PI * progressCircleRadius;
+    elements.progressPath.style.strokeDasharray = `${progressCircumference} ${progressCircumference}`;
+    elements.progressPath.style.strokeDashoffset = progressCircumference;
 
+    function connect() {
+        socket = new WebSocket(wsUrl);
 
-    // --- Event Handlers ---
-    function handleWebSocketMessage(event) {
-        try {
-            const message = JSON.parse(event.data);
-            if (message.type === 'system_status') {
-                updateSystemStatus(message.data);
-            } else if (message.type === 'orchestration_status') {
-                updateOrchestrationStatus(message.data);
+        socket.onopen = () => console.log('WebSocket connection established.');
+        socket.onclose = () => {
+            console.log('WebSocket connection closed. Reconnecting in 3 seconds...');
+            setTimeout(connect, 3000);
+        };
+        socket.onerror = (error) => console.error('WebSocket error:', error);
+        
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'full_status' && message.data) {
+                    if (message.data.system) {
+                        updateSystemStatus(message.data.system);
+                    }
+                    if (message.data.orchestration) {
+                        updateOrchestrationStatus(message.data.orchestration);
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
+                console.warn('Received message data:', event.data);
             }
-        } catch (e) {
-            console.warn("Received non-JSON message from WebSocket:", event.data);
-        }
+        };
     }
 
-    // --- Update Functions ---
     function updateSystemStatus(data) {
-        updateBadge(elements.sensor1Badge, data.sensor_1_status ? 'TRIGGERED' : 'CLEAR', { 'triggered': data.sensor_1_status, 'clear': !data.sensor_1_status });
-        updateBadge(elements.sensor2Badge, data.sensor_2_status ? 'TRIGGERED' : 'CLEAR', { 'triggered': data.sensor_2_status, 'clear': !data.sensor_2_status });
-        updateBadge(elements.ioModuleBadge, data.io_module_status, { 'ok': data.io_module_status === 'ok', 'error': data.io_module_status !== 'ok' });
-        updateBadge(elements.aiServiceBadge, data.ai_service_status, { 'online': data.ai_service_status === 'online', 'offline': data.ai_service_status !== 'online' });
+        updateStatusBadge(elements.statusSensor1, data.sensor_1_status, 'triggered', 'clear');
+        updateStatusBadge(elements.statusSensor2, data.sensor_2_status, 'triggered', 'clear');
+        updateStatusBadge(elements.statusIoModule, data.io_module_status === 'ok', 'ok', 'error', data.io_module_status);
         
-        elements.aiOfflineOverlay.classList.toggle('hidden', data.ai_service_status === 'online');
+        elements.controlConveyorToggle.checked = data.conveyor_relay_status;
+        elements.controlGateToggle.checked = data.gate_relay_status;
+        elements.controlDiverterToggle.checked = data.diverter_relay_status;
+        elements.controlCamlightToggle.checked = data.camera_light_status;
+
         elements.countOnBelt.textContent = data.in_flight_count;
 
-        // Sync toggle switches with actual hardware state
-        updateToggle(elements.conveyorToggle, data.conveyor_relay_status);
-        updateToggle(elements.gateToggle, data.gate_relay_status);
-        updateToggle(elements.diverterToggle, data.diverter_relay_status);
-        updateToggle(elements.camlightToggle, data.camera_light_status);
-        updateToggle(elements.aiToggle, data.ai_service_enabled);
-        
-        // Update video feeds AND the active button style
-        updateVideoFeeds(data.ai_detection_source);
-        updateActiveButton(data.ai_detection_source);
-
-        // --- THE FIX: Trigger the animation when a new box enters ---
-        // 1. Check if the in-flight count has increased.
-        if (data.in_flight_count > lastInFlightCount) {
-            spawnBox();
+        if (data.camera_statuses && Object.keys(data.camera_statuses).length > 0) {
+            const firstCamId = Object.keys(data.camera_statuses)[0];
+            elements.liveFeedTitle.textContent = `${firstCamId.toUpperCase()} CAMERA`;
+            elements.liveCameraFeed.src = `/api/v1/camera/stream/${firstCamId}?t=${new Date().getTime()}`;
         }
-        // 2. Update the state for the next message.
-        lastInFlightCount = data.in_flight_count;
     }
 
     function updateOrchestrationStatus(data) {
-        elements.conveyorMode.textContent = data.mode.toUpperCase();
-        elements.conveyorBelt.classList.toggle('running', data.mode === 'Running');
-
-        const profileName = data.active_profile || 'None';
-        elements.activeProfileDisplay.textContent = profileName;
-        elements.activeProfileDisplay.style.backgroundColor = profileName === 'None' ? 'var(--text-secondary)' : 'var(--accent-teal)';
-
-        // Update progress circle
+        const isRunning = data.mode === "Running";
         const target = data.target_count;
         const progress = data.run_progress;
-        const percentage = (target > 0) ? Math.min((progress / target) * 100, 100) : 0;
-        const offset = progressCircleCircumference - (percentage / 100) * progressCircleCircumference;
-        elements.progressPath.style.strokeDashoffset = offset;
-        elements.progressPercentage.textContent = `${Math.floor(percentage)}%`;
-        elements.progressDetails.textContent = `${progress} / ${target > 0 ? target : '∞'}`;
-
+        
         elements.countExited.textContent = progress;
 
-        // --- THE FIX: Remove the old, incorrect animation trigger ---
-        // The animation is now handled by updateSystemStatus.
-        /*
-        if (progress > lastExitedCount) {
-            spawnBox();
+        let percentage = 0;
+        if (target > 0) {
+            percentage = Math.min((progress / target) * 100, 100);
+            elements.progressDetails.textContent = `${progress} / ${target}`;
+        } else {
+            elements.progressDetails.textContent = `${progress} / ∞`;
         }
-        lastExitedCount = progress;
-        */
-    }
+        const offset = progressCircumference - (percentage / 100) * progressCircumference;
+        elements.progressPath.style.strokeDashoffset = offset;
+        elements.progressPercentage.textContent = `${Math.round(percentage)}%`;
 
-    function updateVideoFeeds(aiSource) {
-        if (!aiSource) return;
-        const rawSrc = `/api/v1/camera/stream/${aiSource}`;
-        const aiSrc = `/api/v1/camera/ai_stream/${aiSource}`;
-        const titleText = `${aiSource.toUpperCase()} CAM (RAW)`;
-
-        if (elements.rawFeedImg.src.endsWith(rawSrc) === false) elements.rawFeedImg.src = rawSrc;
-        if (elements.aiFeedImg.src.endsWith(aiSrc) === false) elements.aiFeedImg.src = aiSrc;
-        if (elements.rawFeedTitle.textContent !== titleText) elements.rawFeedTitle.textContent = titleText;
-    }
-
-    function updateActiveButton(activeSource) {
-        if (activeSource === 'rpi') {
-            elements.aiSourceBtnRpi.classList.add('active');
-            elements.aiSourceBtnUsb.classList.remove('active');
-        } else if (activeSource === 'usb') {
-            elements.aiSourceBtnUsb.classList.add('active');
-            elements.aiSourceBtnRpi.classList.remove('active');
+        elements.activeProfileDisplay.textContent = data.active_profile || 'None';
+        elements.activeProfileDisplay.style.backgroundColor = data.active_profile !== 'None' ? 'var(--accent-blue)' : 'var(--text-secondary)';
+        
+        if (isRunning) {
+            elements.conveyorBelt.classList.add('running');
+            elements.conveyorMode.textContent = "RUNNING";
+        } else {
+            elements.conveyorBelt.classList.remove('running');
+            elements.conveyorMode.textContent = data.mode.toUpperCase();
         }
     }
-
-    function updateBadge(element, text, stateClasses) {
+    
+    function updateStatusBadge(element, is_ok, ok_text, fail_text, value = null) {
         if (!element) return;
+        const text = value ? value : (is_ok ? ok_text : fail_text);
+        const ok_class = ok_text.toLowerCase();
+        const fail_class = fail_text.toLowerCase();
+        
         element.textContent = text;
-        for (const [cls, is_active] of Object.entries(stateClasses)) {
-            element.classList.toggle(cls, is_active);
-        }
+        element.classList.toggle(ok_class, is_ok);
+        element.classList.toggle(fail_class, !is_ok);
+        element.classList.remove(is_ok ? fail_class : ok_class);
     }
+    
+    async function apiPost(endpoint, body = null) {
+        const requestOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        };
 
-    function updateToggle(toggleElement, isActive) {
-        if (toggleElement && toggleElement.checked !== isActive) {
-            toggleElement.checked = isActive;
+        if (body) {
+            requestOptions.body = JSON.stringify(body);
         }
-    }
 
-    // --- Control Actions ---
-    async function apiPost(url, body = {}) {
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
+            const response = await fetch(`/api/v1${endpoint}`, requestOptions);
+            const data = await response.json(); 
+
             if (!response.ok) {
-                const errorData = await response.json();
-                alert(`Error: ${errorData.detail || response.statusText}`);
+                alert(`Error: ${data.detail || response.statusText}`);
+                throw new Error(data.detail || `Request failed with status ${response.status}`);
             }
-            return response;
+            
+            return data;
         } catch (error) {
-            alert(`Network error: ${error.message}`);
+            console.error(`API POST Error to ${endpoint}:`, error);
+            if (!error.message.startsWith('Request failed')) {
+                 alert(`Network Error: ${error.message}`);
+            }
         }
     }
 
-    function setAiSource(source) {
-        console.log(`Requesting AI source switch to: ${source.toUpperCase()}`);
-        apiPost('/api/v1/system/ai/source', { source });
-    }
-
-    function startRun() {
+    elements.startRunBtn.addEventListener('click', () => {
         const profileId = elements.profileSelect.value;
         if (!profileId) {
-            alert('Please select an Object Profile first.');
+            alert('Please select an object profile first.');
             return;
         }
         const payload = {
@@ -209,40 +168,18 @@ document.addEventListener('DOMContentLoaded', () => {
             target_count: parseInt(elements.targetCountInput.value, 10),
             post_batch_delay_sec: parseInt(elements.postBatchDelayInput.value, 10),
         };
-        apiPost('/api/v1/orchestration/run/start', payload);
-    }
-    function stopRun() { apiPost('/api/v1/orchestration/run/stop'); }
-    function resetAll() {
-        if (confirm('Are you sure you want to perform a full system reset?')) {
-            apiPost('/api/v1/system/reset-all');
-        }
-    }
-    function toggleOutput(name) { apiPost(`/api/v1/outputs/toggle/${name}`); }
-    function toggleAiService() { apiPost('/api/v1/system/ai/toggle'); }
+        apiPost('/orchestration/run/start', payload);
+    });
 
-    // --- Animation ---
-    function spawnBox() {
-        const box = document.createElement('div');
-        box.className = 'box';
-        const transitTime = elements.animationZone.dataset.animationTime || 5;
-        box.style.animationDuration = `${transitTime}s`;
-        elements.conveyorBelt.appendChild(box);
-        setTimeout(() => box.remove(), transitTime * 1000);
-    }
+    elements.stopRunBtn.addEventListener('click', () => apiPost('/orchestration/run/stop'));
+    elements.resetAllBtn.addEventListener('click', () => apiPost('/system/reset-all'));
 
-    // --- Initial Setup ---
-    elements.startRunBtn.addEventListener('click', startRun);
-    elements.stopRunBtn.addEventListener('click', stopRun);
-    elements.resetAllBtn.addEventListener('click', resetAll);
-    
-    elements.conveyorToggle.addEventListener('change', () => toggleOutput('conveyor'));
-    elements.gateToggle.addEventListener('change', () => toggleOutput('gate'));
-    elements.diverterToggle.addEventListener('change', () => toggleOutput('diverter'));
-    elements.camlightToggle.addEventListener('change', () => toggleOutput('camera_light'));
-    elements.aiToggle.addEventListener('change', toggleAiService);
+    document.querySelectorAll('.manual-control-toggle input[type="checkbox"]').forEach(toggle => {
+        toggle.addEventListener('change', () => {
+            const name = toggle.id.split('-')[1];
+            apiPost(`/outputs/toggle/${name}`);
+        });
+    });
 
-    elements.aiSourceBtnRpi.addEventListener('click', () => setAiSource('rpi'));
-    elements.aiSourceBtnUsb.addEventListener('click', () => setAiSource('usb'));
-
-    connectWebSocket();
+    connect();
 });

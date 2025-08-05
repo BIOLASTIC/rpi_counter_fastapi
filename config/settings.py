@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Literal, Dict
+from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -79,26 +79,18 @@ class ConveyorSettings(BaseSettings):
     SPEED_M_PER_SEC: float = 0.5
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
 
-# --- NEW: Add a class for Redis keys for consistency ---
-class RedisKeys(BaseSettings):
-    AI_ENABLED_KEY: str = "ai_service:enabled"
-    AI_HEALTH_KEY: str = "ai_service:health_status"
-    AI_DETECTION_SOURCE_KEY: str = "ai_service:detection_source"
-
 # --- Main AppSettings Container ---
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "9.0.0-Dynamic-AI-Switch"
+    PROJECT_VERSION: str = "10.0.0-No-AI"
     APP_ENV: Literal["development", "production"] = "development"
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
-    AI_DETECTION_SOURCE: Literal['rpi', 'usb'] = 'usb'
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
     UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
-    AI_SERVICE_ENABLED_BY_DEFAULT: bool = True
 
 
     # Nested configuration objects
@@ -113,7 +105,6 @@ class AppSettings(BaseSettings):
     ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
     LOGGING: LoggingSettings = LoggingSettings()
     CONVEYOR: ConveyorSettings = ConveyorSettings()
-    REDIS_KEYS: RedisKeys = RedisKeys() # Add the keys object
 
 @lru_cache()
 def get_settings() -> AppSettings:

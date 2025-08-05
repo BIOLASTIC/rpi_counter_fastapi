@@ -1,14 +1,15 @@
 """
 Provides high-level system monitoring and control functionality.
 
-REVISED: Now reads the AI detection source from Redis for its status payload
-and provides a method to update this value dynamically.
+REVISED: All AI-related status information has been removed from the
+system status payload.
+
+DEFINITIVE FIX: The __init__ method is corrected to only accept the
+dependencies it actually uses, resolving the startup TypeError.
 """
-import asyncio
 import time
-from typing import Optional, Dict
+from typing import Dict, Optional
 import psutil
-import redis.asyncio as redis
 
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager, CameraHealthStatus
@@ -16,7 +17,7 @@ from app.core.modbus_poller import AsyncModbusPoller
 from app.services.orchestration_service import AsyncOrchestrationService
 from app.services.detection_service import AsyncDetectionService
 from config import ACTIVE_CAMERA_IDS
-from config.settings import AppSettings
+from config.settings import AppSettings # Import for type hinting
 
 def _get_rpi_cpu_temp() -> Optional[float]:
     """Safely gets the Raspberry Pi CPU temperature."""
@@ -30,6 +31,7 @@ class AsyncSystemService:
     """
     Gathers and provides a unified status report for all system components.
     """
+    # --- THIS IS THE CORRECTED CONSTRUCTOR ---
     def __init__(
         self,
         modbus_controller: AsyncModbusController,
@@ -37,46 +39,21 @@ class AsyncSystemService:
         camera_manager: AsyncCameraManager,
         detection_service: AsyncDetectionService,
         orchestration_service: AsyncOrchestrationService,
-        db_session_factory,
-        sensor_config,
-        output_config,
-        redis_client: redis.Redis,
-        settings: AppSettings
+        settings: AppSettings # <-- It still needs the main settings
     ):
         self._io = modbus_controller
         self._poller = modbus_poller
         self._camera = camera_manager
         self._detection_service = detection_service
         self._orchestration_service = orchestration_service
-        self._sensor_config = sensor_config
-        self._output_config = output_config.model_dump()
+        self._settings = settings # <-- Use the injected settings
+        self._sensor_config = self._settings.SENSORS
+        self._output_config = self._settings.OUTPUTS.model_dump()
         self._app_start_time = time.monotonic()
-        self._redis = redis_client
-        self._settings = settings
-        self._redis_keys = settings.REDIS_KEYS
 
     async def full_system_reset(self):
         """Resets the running process. This is a "soft" reset."""
         await self._orchestration_service.stop_run()
-
-    async def toggle_ai_service(self) -> str:
-        """Checks the current state of the AI service in Redis and flips it."""
-        current_state = await self._redis.get(self._redis_keys.AI_ENABLED_KEY)
-        new_state_bool = not (current_state == "true")
-        await self._redis.set(self._redis_keys.AI_ENABLED_KEY, "true" if new_state_bool else "false")
-        new_state_str = "enabled" if new_state_bool else "disabled"
-        print(f"SYSTEM SERVICE: AI detection has been toggled to {new_state_str.upper()}.")
-        return new_state_str
-
-    # --- NEW: Method to set the AI detection source in Redis ---
-    async def set_ai_detection_source(self, source: str):
-        """Sets the AI detection source in the shared Redis store."""
-        if source not in ['rpi', 'usb']:
-            print(f"SYSTEM SERVICE: Invalid AI source '{source}' requested. Ignoring.")
-            return
-        await self._redis.set(self._redis_keys.AI_DETECTION_SOURCE_KEY, source)
-        print(f"SYSTEM SERVICE: AI detection source has been switched to {source.upper()}.")
-
 
     async def get_system_status(self) -> Dict:
         """Gathers the current health status from all components safely."""
@@ -104,14 +81,6 @@ class AsyncSystemService:
                     return output_states[channel]
                 return False
 
-            ai_service_health = await self._redis.get(self._redis_keys.AI_HEALTH_KEY)
-            ai_service_status = "online" if ai_service_health else "offline"
-            ai_service_enabled_raw = await self._redis.get(self._redis_keys.AI_ENABLED_KEY)
-            ai_service_enabled = ai_service_enabled_raw == "true"
-            
-            # --- REVISED: Get AI source from Redis with a fallback to config ---
-            ai_detection_source = await self._redis.get(self._redis_keys.AI_DETECTION_SOURCE_KEY) or self._settings.AI_DETECTION_SOURCE
-
             return {
                 "cpu_usage": psutil.cpu_percent(interval=None),
                 "memory_usage": psutil.virtual_memory().percent,
@@ -130,9 +99,6 @@ class AsyncSystemService:
                 "buzzer_status": get_output_state("buzzer"),
                 "camera_light_status": get_output_state("camera_light"),
                 "in_flight_count": self._detection_service.get_in_flight_count(),
-                "ai_service_status": ai_service_status,
-                "ai_service_enabled": ai_service_enabled,
-                "ai_detection_source": ai_detection_source,
             }
         except Exception as e:
             print(f"FATAL ERROR in get_system_status: {e}")

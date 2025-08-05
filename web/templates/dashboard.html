@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.3">
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.8"> <!-- Version bumped for cache-busting -->
 
 <div class="dashboard-container">
 
@@ -45,18 +45,13 @@
         <div class="status-line"><strong>Active Profile:</strong> <span class="badge" id="active-profile-display">None</span></div>
     </div>
     
-    <!-- Live Feeds Section (with GENERIC IDs) -->
+    <!-- SIMPLIFIED Live Feeds Section -->
     <div class="grid-card feeds-card">
-        <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Feeds</h3>
-        <div class="feeds-grid">
+        <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Camera Feed</h3>
+        <div class="feeds-grid" style="grid-template-columns: 1fr;">
             <div class="camera-feed-container">
-                <div class="camera-title-overlay" id="raw-feed-title">AI SOURCE (RAW)</div>
-                <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live raw camera feed">
-            </div>
-            <div class="camera-feed-container">
-                <div class="camera-title-overlay">AI DETECTION FEED</div>
-                <img id="live-ai-feed" src="/static/images/placeholder.jpg" alt="Live AI processed feed">
-                <div id="ai-offline-overlay" class="camera-offline-overlay"><i class="bi bi-cpu"></i><span>OFFLINE</span></div>
+                <div class="camera-title-overlay" id="live-feed-title">CAMERA</div>
+                <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live camera feed">
             </div>
         </div>
     </div>
@@ -103,7 +98,6 @@
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
-             <!-- Status Indicators -->
              <div class="status-item">
                  <div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div>
                  <div class="status-badge" id="status-sensor-1">clear</div>
@@ -116,11 +110,6 @@
                  <div class="status-label"><i class="bi bi-cpu"></i> IO Module</div>
                  <div class="status-badge" id="status-io-module">--</div>
              </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-robot"></i> AI Service Health</div>
-                 <div class="status-badge" id="status-ai-service">offline</div>
-             </div>
-             <!-- Manual Toggles -->
              <div class="status-item manual-control-toggle">
                  <div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div>
                  <label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label>
@@ -133,24 +122,11 @@
                  <div class="status-label"><i class="bi bi-exclude"></i> Diverter</div>
                  <label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label>
              </div>
+             <!-- DEFINITIVE FIX: The ID now includes an underscore to match the backend -->
              <div class="status-item manual-control-toggle">
                  <div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-camlight-toggle"><span class="toggle-slider"></span></label>
+                 <label class="toggle-switch"><input type="checkbox" id="control-camera_light-toggle"><span class="toggle-slider"></span></label>
              </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-robot"></i> AI Detection</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-ai-toggle"><span class="toggle-slider"></span></label>
-             </div>
-
-             <!-- THE FIX IS HERE: This block was missing but is now correctly included -->
-             <div class="status-item ai-source-control">
-                <div class="status-label"><i class="bi bi-camera-reels-fill"></i> AI Source</div>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="ai-source-btn-rpi" data-source="rpi">RPi CAM</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="ai-source-btn-usb" data-source="usb">USB CAM</button>
-                </div>
-             </div>
-             <!-- End of the fix -->
          </div>
     </div>
 
@@ -158,5 +134,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=1.3"></script>
+<script src="/static/js/dashboard_v3.js?v=1.8"></script>
 {% endblock %}
