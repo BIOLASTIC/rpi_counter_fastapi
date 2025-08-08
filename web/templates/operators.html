@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Operator Management</h1>
+        <button class="btn btn-primary" id="add-operator-btn">
+            <i class="bi bi-plus-circle me-2"></i>Add New Operator
+        </button>
+    </div>
+
+    <div class="card">
+         <div class="card-body">
+            <p class="card-text text-muted">
+                Manage the list of operators who can run production batches.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Creation Date</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="operators-table-body">
+                        <!-- JS will populate this -->
+                        <tr><td colspan="4" class="text-center">Loading operators...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Operator Modal -->
+<div class="modal fade" id="operator-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="operator-modal-title">Operator</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="operator-form">
+                    <input type="hidden" id="operator-id">
+                    <div class="mb-3">
+                        <label for="operator-name" class="form-label">Operator Name*</label>
+                        <input type="text" class="form-control" id="operator-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="operator-status" class="form-label">Status</label>
+                        <select class="form-select" id="operator-status">
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Save Operator</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/operators.js"></script>
+{% endblock %}```
+

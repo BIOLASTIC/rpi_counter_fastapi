@@ -9,8 +9,11 @@ from .detection import Detection
 from .system_status import SystemStatus
 from .event_log import EventLog
 from .configuration import Configuration
-# --- NEW: Import and expose the new profile models ---
 from .profiles import CameraProfile, ObjectProfile
+from .product import Product, ProductStatus
+from .operator import Operator, OperatorStatus
+from .run_log import RunLog, RunStatus
+
 
 __all__ = [
     "Base",
@@ -22,4 +25,10 @@ __all__ = [
     "Configuration",
     "CameraProfile",
     "ObjectProfile",
+    "Product",
+    "ProductStatus",
+    "Operator",
+    "OperatorStatus",
+    "RunLog",
+    "RunStatus",
 ]

@@ -2,53 +2,33 @@
 
 {% block content %}
 <style>
-    .gallery-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1rem;
-    }
-    .gallery-item img {
-        width: 100%;
-        height: auto;
-        border-radius: 0.5rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        cursor: pointer;
-    }
-    .gallery-item img:hover {
-        transform: scale(1.03);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-    }
-    #loader {
-        text-align: center;
-        padding: 2rem;
-        grid-column: 1 / -1;
-    }
+    .gallery-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+    .gallery-item img { width: 100%; height: auto; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); cursor: pointer; }
+    #loader { text-align: center; padding: 2rem; grid-column: 1 / -1; }
 </style>
 
 <div class="container">
-    <!-- The title is now dynamic -->
     <h1 class="mb-4">Image Gallery ({{ camera_name }})</h1>
-    <p class="text-muted">Captured images from the {{ camera_name }} camera, newest first. Click an image to open it in a new tab.</p>
-
-    <!-- 
-      THE FIX IS HERE:
-      1. This div now has the ID 'gallery-container' that the script expects.
-      2. It has a 'data-camera-id' attribute that holds the camera ID from the router.
-    -->
-    <div id="gallery-container" class="gallery-container" data-camera-id="{{ camera_id }}">
-        <!-- Images will be loaded here by JavaScript -->
-    </div>
-
-     <div id="loader">
-        <div class="spinner-border" role="status">
-            <span class="visually-hidden">Loading...</span>
+    
+    <!-- PHASE 5: New download controls -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Download Archive</h5>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4"><label for="start-date" class="form-label">Start Date</label><input type="date" id="start-date" class="form-control"></div>
+                <div class="col-md-4"><label for="end-date" class="form-label">End Date</label><input type="date" id="end-date" class="form-control"></div>
+                <div class="col-md-4"><button class="btn btn-primary w-100" id="download-zip-btn">Download Images as ZIP</button></div>
+            </div>
         </div>
     </div>
+    
+    <p class="text-muted">Captured images from the {{ camera_name }} camera, newest first. Click an image to open it in a new tab.</p>
+    
+    <div id="gallery-container" class="gallery-container" data-camera-id="{{ camera_id }}"></div>
+    <div id="loader"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<!-- It now loads the single, generic gallery.js script -->
 <script type="module" src="/static/js/gallery.js"></script>
 {% endblock %}

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from app.models import get_async_session, CameraProfile, ObjectProfile
+from app.models import get_async_session, CameraProfile, ObjectProfile, Product
 from app.schemas.profiles import (
     CameraProfileCreate, CameraProfileUpdate, CameraProfileOut,
     ObjectProfileCreate, ObjectProfileUpdate, ObjectProfileOut
@@ -108,14 +108,20 @@ async def create_object_profile(
             status_code=409,
             detail=f"An object profile with the name '{profile_in.name}' already exists."
         )
+    
+    # --- PHASE 1: Validate that the product_id exists if provided ---
+    if profile_in.product_id:
+        product = await db.get(Product, profile_in.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product with ID {profile_in.product_id} not found.")
 
     new_profile = ObjectProfile(**profile_in.model_dump())
     db.add(new_profile)
     await db.commit()
-    # We need to load the relationship to return it in the response
+    # We need to load the relationships to return them in the response
     result = await db.execute(
         select(ObjectProfile)
-        .options(selectinload(ObjectProfile.camera_profile))
+        .options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
         .where(ObjectProfile.id == new_profile.id)
     )
     return result.scalar_one()
@@ -123,10 +129,10 @@ async def create_object_profile(
 
 @router.get("/object", response_model=List[ObjectProfileOut])
 async def get_all_object_profiles(db: AsyncSession = Depends(get_async_session)):
-    """Retrieve all object profiles, including their linked camera profiles."""
+    """Retrieve all object profiles, including their linked camera and product profiles."""
     result = await db.execute(
         select(ObjectProfile)
-        .options(selectinload(ObjectProfile.camera_profile))
+        .options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
         .order_by(ObjectProfile.name)
     )
     return result.scalars().all()
@@ -136,7 +142,7 @@ async def get_object_profile(profile_id: int, db: AsyncSession = Depends(get_asy
     """Retrieve a single object profile by ID."""
     result = await db.execute(
         select(ObjectProfile)
-        .options(selectinload(ObjectProfile.camera_profile))
+        .options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
         .where(ObjectProfile.id == profile_id)
     )
     profile = result.scalar_one_or_none()
@@ -154,7 +160,7 @@ async def update_object_profile(
     # Use selectinload to fetch the profile and its related camera_profile in one go
     result = await db.execute(
         select(ObjectProfile)
-        .options(selectinload(ObjectProfile.camera_profile))
+        .options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
         .where(ObjectProfile.id == profile_id)
     )
     profile = result.scalar_one_or_none()
@@ -162,11 +168,19 @@ async def update_object_profile(
         raise HTTPException(status_code=404, detail="Object profile not found")
         
     update_data = profile_in.model_dump(exclude_unset=True)
+
+    # --- PHASE 1: Validate that the product_id exists if provided ---
+    if "product_id" in update_data and update_data["product_id"]:
+         product = await db.get(Product, update_data["product_id"])
+         if not product:
+            raise HTTPException(status_code=404, detail=f"Product with ID {update_data['product_id']} not found.")
+
     for key, value in update_data.items():
         setattr(profile, key, value)
         
     await db.commit()
     # Refresh to ensure all data, including relationships, is up to date
+    await db.refresh(profile, attribute_names=['product']) # Eagerly refresh the product relationship
     await db.refresh(profile)
     return profile
 

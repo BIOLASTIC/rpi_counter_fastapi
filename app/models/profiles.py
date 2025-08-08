@@ -8,6 +8,8 @@ from sqlalchemy import Integer, String, Boolean, Float, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+# --- PHASE 1: Import Product for relationship ---
+from .product import Product
 
 class CameraProfile(Base):
     """
@@ -52,6 +54,11 @@ class ObjectProfile(Base):
     
     # SQLAlchemy relationship to easily access the linked CameraProfile object
     camera_profile: Mapped["CameraProfile"] = relationship()
+    
+    # --- PHASE 1: Add relationship to the Product model ---
+    product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True)
+    product: Mapped[Optional["Product"]] = relationship()
+
 
     def __repr__(self) -> str:
         return f"<ObjectProfile(id={self.id}, name='{self.name}')>"

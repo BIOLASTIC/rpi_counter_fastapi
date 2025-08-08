@@ -23,11 +23,9 @@ async def get_api_key(api_key: str = Security(API_KEY_HEADER)):
         )
 
 # --- Simple In-Memory Rate Limiting ---
-# WARNING: This is a simple implementation for demonstration.
-# For production, use a more robust solution like Redis.
 rate_limit_db: Dict[str, List[float]] = {}
-RATE_LIMIT_REQUESTS = 10  # requests
-RATE_LIMIT_TIMEFRAME = 60  # seconds
+RATE_LIMIT_REQUESTS = 10
+RATE_LIMIT_TIMEFRAME = 60
 
 async def rate_limiter(request: Request):
     """
@@ -39,7 +37,6 @@ async def rate_limiter(request: Request):
     if client_ip not in rate_limit_db:
         rate_limit_db[client_ip] = []
 
-    # Filter out timestamps that are outside the current timeframe
     rate_limit_db[client_ip] = [
         t for t in rate_limit_db[client_ip] if t > current_time - RATE_LIMIT_TIMEFRAME
     ]

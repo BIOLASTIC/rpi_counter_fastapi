@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="container-fluid">
-    <h1 class="mb-4">Profile Management</h1>
+    <h1 class="mb-4">Profile & Recipe Management</h1>
 
     <div class="row g-4">
         <!-- Camera Profiles Column -->
@@ -45,14 +45,14 @@
                     </button>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted small">The master "recipes" for a production run. Links to a camera profile.</p>
+                    <p class="text-muted small">The master "recipes" for a production run. Links a Camera Profile to a Product.</p>
                     <div class="table-responsive">
                         <table class="table table-hover">
                             <thead>
                                 <tr>
                                     <th>Name</th>
+                                    <th>Product</th>
                                     <th>Camera Profile</th>
-                                    <th>Sort Offset (ms)</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -115,15 +115,21 @@
                 <form id="object-profile-form">
                     <input type="hidden" id="object-profile-id">
                     <div class="mb-3">
-                        <label for="object-profile-name" class="form-label">Recipe Name</label>
+                        <label for="object-profile-name" class="form-label">Recipe Name*</label>
                         <input type="text" class="form-control" id="object-profile-name" required>
                     </div>
                      <div class="mb-3">
-                        <label for="object-camera-profile-select" class="form-label">Camera Profile</label>
+                        <label for="object-camera-profile-select" class="form-label">Camera Profile*</label>
                         <select class="form-select" id="object-camera-profile-select" required></select>
                     </div>
+                    <!-- PHASE 2: New dropdown to link a Product -->
                     <div class="mb-3">
-                        <label for="object-sort-offset" class="form-label">Sort Time Offset (ms)</label>
+                        <label for="object-product-select" class="form-label">Product to Run*</label>
+                        <select class="form-select" id="object-product-select" required></select>
+                        <div class="form-text">Select a product from the master list.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="object-sort-offset" class="form-label">Sort Time Offset (ms)*</label>
                         <input type="number" class="form-control" id="object-sort-offset" required>
                         <div class="form-text">Adjusts sorting time. Negative values sort earlier, positive values later.</div>
                     </div>

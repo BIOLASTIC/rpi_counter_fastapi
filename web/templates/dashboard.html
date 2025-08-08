@@ -1,30 +1,29 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.8"> <!-- Version bumped for cache-busting -->
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=1.9"> <!-- Version bumped for cache-busting -->
 
 <div class="dashboard-container">
+
+    <!-- PHASE 4: Persistent Alarm Block -->
+    <div class="grid-card alarm-card" id="run-alarm-block" style="display: none;">
+        <div class="alarm-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+        <div class="alarm-content">
+            <h4 class="alarm-title">OPERATOR ALERT</h4>
+            <p class="alarm-message" id="run-alarm-message">Product size mismatch detected.</p>
+        </div>
+        <button class="btn btn-warning" id="acknowledge-alarm-btn">Acknowledge</button>
+    </div>
 
     <!-- Live Process View Card with Animation -->
     <div class="grid-card animation-card">
         <h3 class="card-title"><i class="bi bi-truck-front"></i> Live Process View</h3>
         <div id="animation-zone" data-animation-time="{{ animation_time }}">
-            <div id="conveyor-belt">
-                <!-- Box animations will be spawned here by JS -->
-            </div>
+            <div id="conveyor-belt"></div>
             <div id="conveyor-overlay-info">
-                <div class="info-box">
-                    <span class="info-label">ON BELT</span>
-                    <span class="info-value" id="count-on-belt">0</span>
-                </div>
-                <div class="info-box-main">
-                    <span class="info-label">PROCESSED THIS RUN</span>
-                    <span class="info-value-main" id="count-exited">0</span>
-                </div>
-                <div class="info-box">
-                    <span class="info-label">MODE</span>
-                    <span class="info-value" id="conveyor-mode">STOPPED</span>
-                </div>
+                <div class="info-box"><span class="info-label">ON BELT</span><span class="info-value" id="count-on-belt">0</span></div>
+                <div class="info-box-main"><span class="info-label">PROCESSED</span><span class="info-value-main" id="count-exited">0</span></div>
+                <div class="info-box"><span class="info-label">MODE</span><span class="info-value" id="conveyor-mode">STOPPED</span></div>
             </div>
         </div>
     </div>
@@ -35,7 +34,7 @@
         <div class="progress-container">
             <svg class="progress-circle" viewBox="0 0 100 100">
                 <circle class="progress-circle__trail" cx="50" cy="50" r="45"></circle>
-                <circle class="progress-circle__path" id="progress-path" cx="50" cy="50" r="45" style="stroke-dasharray: 282.7; stroke-dashoffset: 282.7;"></circle>
+                <circle class="progress-circle__path" id="progress-path" cx="50" cy="50" r="45"></circle>
             </svg>
             <div class="progress-text">
                 <div id="progress-percentage">0%</div>
@@ -48,91 +47,81 @@
     <!-- SIMPLIFIED Live Feeds Section -->
     <div class="grid-card feeds-card">
         <h3 class="card-title"><i class="bi bi-camera-video"></i> Live Camera Feed</h3>
-        <div class="feeds-grid" style="grid-template-columns: 1fr;">
-            <div class="camera-feed-container">
-                <div class="camera-title-overlay" id="live-feed-title">CAMERA</div>
-                <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live camera feed">
-            </div>
-        </div>
+        <div class="feeds-grid" style="grid-template-columns: 1fr;"><div class="camera-feed-container">
+            <div class="camera-title-overlay" id="live-feed-title">CAMERA</div>
+            <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live camera feed">
+        </div></div>
     </div>
 
     <!-- Main Control Section -->
     <div class="grid-card control-card">
         <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
-        <div class="control-grid">
-            <div class="control-section">
-                <h4 class="section-title">1. Select Recipe</h4>
-                <div class="form-group">
-                    <label for="object-profile-select">Object Profile</label>
-                    <select id="object-profile-select" class="form-select">
-                        <option value="">-- Select a Profile --</option>
-                        {% for p in object_profiles %}
-                        <option value="{{ p.id }}">{{ p.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+        <div class="control-grid-main">
+            <div class="form-group">
+                <label for="object-profile-select">1. Select Recipe</label>
+                <select id="object-profile-select" class="form-select">
+                    <option value="">-- Select a Profile --</option>
+                    {% for p in object_profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+                </select>
             </div>
-            <div class="control-section">
-                <h4 class="section-title">2. Configure Run</h4>
-                <div class="form-group">
-                    <label for="target-count-input">Target Count (0 for ∞)</label>
-                    <input type="number" class="form-control" id="target-count-input" value="10" min="0">
-                </div>
-                 <div class="form-group" style="margin-top: 1rem;">
-                    <label for="post-batch-delay-input">Post-Run Pause (s)</label>
-                    <input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0">
-                </div>
+            <div class="form-group">
+                <label for="target-count-input">2. Set Target Count (0 for ∞)</label>
+                <input type="number" class="form-control" id="target-count-input" value="10" min="0">
             </div>
-            <div class="control-section">
-                <h4 class="section-title">3. Execute</h4>
-                <div class="control-buttons">
-                    <button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
-                    <button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
-                    <button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button>
+            <div class="control-buttons">
+                <button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button>
+                <button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button>
+                <button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PHASE 4: New Pre-Run Modal with multiple views -->
+<div class="modal fade" id="pre-run-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pre-run-modal-title">Pre-Run Checklist</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- View 1: Input Form -->
+                <div id="pre-run-input-view">
+                    <p class="text-muted">Please provide the following details before starting the run.</p>
+                    <div class="mb-3">
+                        <label for="operator-select" class="form-label">Operator*</label>
+                        <select id="operator-select" class="form-select" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="batch-code-input" class="form-label">Batch Code*</label>
+                        <input type="text" id="batch-code-input" class="form-control" required>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-primary" id="review-run-btn">Review Run</button>
+                    </div>
+                </div>
+                <!-- View 2: Confirmation -->
+                <div id="pre-run-confirm-view" style="display: none;">
+                    <h6>Please confirm the following run details:</h6>
+                    <ul class="list-group">
+                        <li class="list-group-item"><strong>Operator:</strong> <span id="confirm-operator"></span></li>
+                        <li class="list-group-item"><strong>Batch Code:</strong> <span id="confirm-batch-code"></span></li>
+                        <li class="list-group-item"><strong>Recipe:</strong> <span id="confirm-recipe"></span></li>
+                        <li class="list-group-item"><strong>Target:</strong> <span id="confirm-target"></span></li>
+                    </ul>
+                    <div class="alert alert-warning mt-3">This will start the conveyor belt and begin the production run.</div>
+                    <div class="d-flex justify-content-between mt-3">
+                        <button type="button" class="btn btn-secondary" id="go-back-btn">Go Back</button>
+                        <button type="button" class="btn btn-success" id="start-final-run-btn">START FINAL RUN</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- System Status & Manual Control Section -->
-    <div class="grid-card system-status-card">
-         <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
-         <div class="system-status-grid">
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div>
-                 <div class="status-badge" id="status-sensor-1">clear</div>
-             </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div>
-                 <div class="status-badge" id="status-sensor-2">clear</div>
-             </div>
-             <div class="status-item">
-                 <div class="status-label"><i class="bi bi-cpu"></i> IO Module</div>
-                 <div class="status-badge" id="status-io-module">--</div>
-             </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label>
-             </div>
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-gate-toggle"><span class="toggle-slider"></span></label>
-             </div>
-              <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-exclude"></i> Diverter</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label>
-             </div>
-             <!-- DEFINITIVE FIX: The ID now includes an underscore to match the backend -->
-             <div class="status-item manual-control-toggle">
-                 <div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div>
-                 <label class="toggle-switch"><input type="checkbox" id="control-camera_light-toggle"><span class="toggle-slider"></span></label>
-             </div>
-         </div>
-    </div>
-
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=1.8"></script>
+<script src="/static/js/dashboard_v3.js?v=1.9"></script>
 {% endblock %}

@@ -1,92 +1,111 @@
-// /static/js/gallery.js
+const galleryContainer = document.getElementById('gallery-container');
+const loader = document.getElementById('loader');
+const cameraId = galleryContainer.dataset.cameraId;
+let currentPage = 1;
+let isLoading = false;
+let hasMore = true;
 
-document.addEventListener('DOMContentLoaded', () => {
-    const galleryContainer = document.getElementById('gallery-container');
-    const loader = document.getElementById('loader');
-    
-    // --- THE FIX: Check if the container element exists before proceeding ---
-    if (!galleryContainer) {
-        console.error("Gallery container with ID 'gallery-container' not found. Aborting script.");
-        return;
+async function loadImages() {
+    if (isLoading || !hasMore) return;
+    isLoading = true;
+    loader.style.display = 'block';
+
+    try {
+        const response = await fetch(`/api/v1/camera/captures/${cameraId}?page=${currentPage}&page_size=12`);
+        if (!response.ok) throw new Error('Failed to load images');
+        const data = await response.json();
+        
+        data.images.forEach(imagePath => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.innerHTML = `<a href="${imagePath}" target="_blank"><img src="${imagePath}" loading="lazy"></a>`;
+            galleryContainer.appendChild(item);
+        });
+        
+        hasMore = data.has_more;
+        currentPage++;
+    } catch (error) {
+        console.error('Error loading images:', error);
+        loader.innerHTML = '<p class="text-danger">Failed to load images.</p>';
+    } finally {
+        isLoading = false;
+        if (!hasMore) loader.style.display = 'none';
     }
+}
 
-    // --- The script now dynamically determines the camera ID from the HTML ---
-    const CAMERA_ID = galleryContainer.dataset.cameraId;
-    
-    if (!CAMERA_ID) {
-        console.error("Camera ID not found in data-camera-id attribute. Aborting script.");
-        return;
+// Infinite scroll listener
+window.addEventListener('scroll', () => {
+    if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+        loadImages();
     }
-
-    let currentPage = 1;
-    let isLoading = false;
-    let hasMore = true;
-
-    async function fetchImages() {
-        if (isLoading || !hasMore) return;
-        isLoading = true;
-        loader.style.display = 'block';
-
-        try {
-            const response = await fetch(`/api/v1/camera/captures/${CAMERA_ID}?page=${currentPage}&page_size=10`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            
-            displayImages(data);
-
-        } catch (error) {
-            console.error("Failed to fetch images:", error);
-            hasMore = false; // Stop trying on error
-        } finally {
-            isLoading = false;
-            loader.style.display = 'none';
-        }
-    }
-
-    function displayImages(data) {
-        if (data.images.length > 0) {
-            data.images.forEach(imagePath => {
-                const galleryItem = document.createElement('div');
-                galleryItem.className = 'gallery-item';
-
-                const link = document.createElement('a');
-                link.href = imagePath;
-                link.target = '_blank';
-
-                const img = document.createElement('img');
-                img.src = imagePath;
-                img.className = 'img-fluid';
-                img.alt = 'Captured Image';
-                img.loading = 'lazy';
-
-                link.appendChild(img);
-                galleryItem.appendChild(link);
-                // This line will now work because we've confirmed galleryContainer is not null
-                galleryContainer.appendChild(galleryItem);
-            });
-            hasMore = data.has_more;
-            currentPage++;
-        } else {
-            hasMore = false;
-            if (currentPage === 1) {
-                const noImagesMsg = document.createElement('p');
-                noImagesMsg.textContent = 'No images have been captured for this camera yet.';
-                noImagesMsg.className = 'text-muted text-center';
-                galleryContainer.appendChild(noImagesMsg);
-            }
-        }
-    }
-
-    // Initial load
-    fetchImages();
-
-    // Infinite scroll listener
-    window.addEventListener('scroll', () => {
-        // Only fetch more if we're near the bottom of the page
-        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
-            fetchImages();
-        }
-    });
 });
+
+// --- PHASE 5: New ZIP Download Logic ---
+const downloadBtn = document.getElementById('download-zip-btn');
+const startDateInput = document.getElementById('start-date');
+const endDateInput = document.getElementById('end-date');
+
+// Set default dates to today
+const today = new Date().toISOString().split('T')[0];
+startDateInput.value = today;
+endDateInput.value = today;
+
+downloadBtn.addEventListener('click', async () => {
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+
+    if (!startDate || !endDate) {
+        alert('Please select both a start and end date.');
+        return;
+    }
+
+    downloadBtn.disabled = true;
+    downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating ZIP...';
+
+    try {
+        const response = await fetch('/api/v1/camera/captures/download-zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                camera_id: cameraId,
+                start_date: startDate,
+                end_date: endDate
+            }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to create ZIP file.');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        // Extract filename from response header if available, otherwise create one
+        const disposition = response.headers.get('content-disposition');
+        let filename = `captures_${cameraId}.zip`;
+        if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+        
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    } finally {
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = 'Download Images as ZIP';
+    }
+});
+
+// Initial load
+loadImages();

@@ -44,10 +44,23 @@ async def read_dashboard(
     }
     return NoCacheTemplateResponse(request, "dashboard.html", context)
 
-@router.get("/profiles", response_class=HTMLResponse)
+# --- PHASE 2: Route for Object Profile management page renamed for clarity ---
+@router.get("/management/recipes", response_class=HTMLResponse)
 async def read_profiles_page(request: Request):
     """Renders the main profile management page."""
     return NoCacheTemplateResponse(request, "profiles.html", {"request": request})
+
+# --- PHASE 2: New routes for Product and Operator management ---
+@router.get("/management/products", response_class=HTMLResponse)
+async def read_products_page(request: Request):
+    """Renders the product master management page."""
+    return NoCacheTemplateResponse(request, "products.html", {"request": request})
+
+@router.get("/management/operators", response_class=HTMLResponse)
+async def read_operators_page(request: Request):
+    """Renders the operator management page."""
+    return NoCacheTemplateResponse(request, "operators.html", {"request": request})
+
 
 @router.get("/status", response_class=HTMLResponse)
 async def read_status_page(request: Request):

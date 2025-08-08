@@ -78,6 +78,9 @@ class ConveyorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
     SPEED_M_PER_SEC: float = 0.5
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
+    # --- PHASE 6: New setting for stalled product detection ---
+    MAX_TRANSIT_TIME_SEC: float = Field(15.0, gt=0, description="Max time for a product to travel from entry to exit before a failure is triggered.")
+
 
 # --- Main AppSettings Container ---
 
@@ -102,7 +105,7 @@ class AppSettings(BaseSettings):
     OUTPUTS: OutputChannelSettings = OutputChannelSettings()
     MODBUS: ModbusSettings = ModbusSettings()
     SENSORS: SensorSettings = SensorSettings()
-    ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
+    ORCHESTration: OrchestrationSettings = OrchestrationSettings()
     LOGGING: LoggingSettings = LoggingSettings()
     CONVEYOR: ConveyorSettings = ConveyorSettings()
 

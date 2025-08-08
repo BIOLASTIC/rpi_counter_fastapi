@@ -7,7 +7,9 @@ and their associated Pydantic models and dependencies.
 """
 from fastapi import APIRouter, Depends, Request
 from app.services.system_service import AsyncSystemService
+# --- THIS IS THE CORRECT AND FINAL IMPORT PATH ---
 from app.auth.dependencies import get_api_key, rate_limiter
+# --------------------------------------------------
 from config import settings # Import settings for version
 
 router = APIRouter()
@@ -18,15 +20,12 @@ def get_system_service(request: Request) -> AsyncSystemService:
 @router.get("/version")
 async def get_version():
     """Returns the current running code version to verify updates."""
-    # Use the version from the settings file for consistency
     return {"version": settings.PROJECT_VERSION}
 
 @router.get("/status", dependencies=[Depends(rate_limiter)])
 async def get_system_status(service: AsyncSystemService = Depends(get_system_service)):
     """Get overall system health status."""
     return await service.get_system_status()
-
-# --- REMOVED: All endpoints related to AI control have been deleted. ---
 
 @router.post("/reset-all", status_code=200)
 async def reset_all_state(service: AsyncSystemService = Depends(get_system_service)):

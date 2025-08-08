@@ -7,6 +7,8 @@ profile management API endpoints.
 """
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
+# --- PHASE 1: Import ProductOut for nesting ---
+from .products import ProductOut
 
 # --- CameraProfile Schemas ---
 
@@ -42,6 +44,8 @@ class ObjectProfileBase(BaseModel):
     camera_profile_id: int
     sort_offset_ms: int = 0
     description: Optional[str] = None
+    # --- PHASE 1: Add product_id ---
+    product_id: Optional[int] = None
 
 class ObjectProfileCreate(ObjectProfileBase):
     pass
@@ -50,6 +54,9 @@ class ObjectProfileUpdate(ObjectProfileBase):
     name: Optional[str] = None
     camera_profile_id: Optional[int] = None
     sort_offset_ms: Optional[int] = None
+    # --- PHASE 1: Add product_id ---
+    product_id: Optional[int] = None
+
 
 class ObjectProfileOut(ObjectProfileBase):
     model_config = ConfigDict(from_attributes=True)
@@ -57,3 +64,5 @@ class ObjectProfileOut(ObjectProfileBase):
     # When we output an ObjectProfile, we want to include the full
     # nested CameraProfile object, not just its ID.
     camera_profile: CameraProfileOut
+    # --- PHASE 1: Add nested product object ---
+    product: Optional[ProductOut] = None
