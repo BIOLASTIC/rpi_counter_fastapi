@@ -6,7 +6,9 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.models import get_async_session, RunLog
-from app.schemas.run_log import RunLogOut # We will create this schema next
+# --- THIS IMPORT WILL NOW WORK ---
+from app.schemas.run_log import RunLogOut
+# ---------------------------------
 
 router = APIRouter()
 

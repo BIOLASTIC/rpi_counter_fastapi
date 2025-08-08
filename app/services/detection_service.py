@@ -43,6 +43,7 @@ class AsyncDetectionService:
 
         self._in_flight_objects: Deque[str] = deque()
         self._entry_timestamps: Dict[int, float] = {}
+        # --- PHASE 6: State for stalled product timers ---
         self._stalled_product_timers: Dict[str, asyncio.TimerHandle] = {}
         
         self._base_travel_time_sec = 0.0
@@ -68,39 +69,57 @@ class AsyncDetectionService:
 
         if min_time is not None and max_time is not None and not (min_time <= block_duration_ms <= max_time):
             warning_msg = f"Product size mismatch! Blocked for {block_duration_ms:.0f}ms. Expected: {min_time}-{max_time}ms."
+            # This triggers the non-stopping, acknowledgeable alarm
             await self._orchestration.trigger_persistent_alarm(warning_msg)
             if self._verbose: print(f"VALIDATION: {warning_msg}")
 
+    # --- PHASE 6: New method to handle the timeout for a stalled product ---
     async def _handle_stalled_product(self, box_id: str):
         """Callback executed when a product takes too long to be processed."""
         async with self._lock:
+            # Clean up the timer handle regardless of the outcome
             self._stalled_product_timers.pop(box_id, None)
+
+            # Check if the box is still considered in-flight. 
+            # If it was processed, it would have been removed from the deque.
             if box_id in self._in_flight_objects:
                 self._in_flight_objects.remove(box_id)
-                reason = f"Stalled product detected (ID: {box_id})"
+                reason = f"Stalled product detected on conveyor (ID: {box_id})"
                 print(f"DETECTION FAILURE: {reason}. Triggering run failure.")
+                
+                # This triggers the critical, process-stopping failure
                 await self._orchestration.trigger_run_failure(reason)
+
             elif self._verbose:
+                # This can happen in a race condition where the box is processed right as the timer fires.
+                # It's safe to just ignore it.
                 print(f"Stalled product timer fired for already processed Box ID {box_id}. Ignoring.")
 
     async def handle_sensor_event(self, event: SensorEvent):
         """The entry point for all sensor events from the Modbus Poller."""
         async with self._lock:
             if self._orchestration.get_status()["mode"] != OperatingMode.RUNNING.value:
+                # If a run is stopped externally, cancel any pending timers
                 if self._stalled_product_timers:
                     for timer in self._stalled_product_timers.values(): timer.cancel()
                     self._stalled_product_timers.clear()
                 return
 
+            # Handle Entry Sensor events
             if event.sensor_id == settings.SENSORS.ENTRY_CHANNEL:
                 if event.new_state == SensorState.TRIGGERED:
                     self._entry_timestamps[event.sensor_id] = event.timestamp
                     box_id = str(uuid.uuid4())
                     self._in_flight_objects.append(box_id)
 
+                    # --- PHASE 6: Schedule the stalled product timer ---
                     timeout_sec = self._conveyor_config.MAX_TRANSIT_TIME_SEC
                     loop = asyncio.get_running_loop()
-                    timer_handle = loop.call_later(timeout_sec, lambda: asyncio.create_task(self._handle_stalled_product(box_id)))
+                    timer_handle = loop.call_later(
+                        timeout_sec, 
+                        # Use a lambda to ensure the async task is created within the running loop
+                        lambda: asyncio.create_task(self._handle_stalled_product(box_id))
+                    )
                     self._stalled_product_timers[box_id] = timer_handle
                     
                     if self._verbose: print(f"DETECTION: New box ID {box_id}. Stalled timer set for {timeout_sec}s.")
@@ -113,10 +132,12 @@ class AsyncDetectionService:
                 elif event.new_state == SensorState.CLEARED:
                     await self._check_sensor_block_time(event)
 
+            # Handle Exit Sensor events
             elif event.sensor_id == settings.SENSORS.EXIT_CHANNEL and event.new_state == SensorState.TRIGGERED:
                 if self._in_flight_objects:
                     exiting_box_id = self._in_flight_objects.popleft()
                     
+                    # --- PHASE 6: Cancel the timer for the successfully processed box ---
                     timer_to_cancel = self._stalled_product_timers.pop(exiting_box_id, None)
                     if timer_to_cancel:
                         timer_to_cancel.cancel()

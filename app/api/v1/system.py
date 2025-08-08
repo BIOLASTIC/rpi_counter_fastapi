@@ -7,9 +7,10 @@ and their associated Pydantic models and dependencies.
 """
 from fastapi import APIRouter, Depends, Request
 from app.services.system_service import AsyncSystemService
-# --- THIS IS THE CORRECT AND FINAL IMPORT PATH ---
-from app.auth.dependencies import get_api_key, rate_limiter
-# --------------------------------------------------
+# --- THIS IS THE FIX ---
+# The import path is corrected to match your project's directory structure.
+from app.api.v1.auth.dependencies import get_api_key, rate_limiter
+# -----------------------
 from config import settings # Import settings for version
 
 router = APIRouter()

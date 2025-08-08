@@ -40,7 +40,7 @@ window.addEventListener('scroll', () => {
     }
 });
 
-// --- PHASE 5: New ZIP Download Logic ---
+// --- THIS IS THE ROBUST FIX ---
 const downloadBtn = document.getElementById('download-zip-btn');
 const startDateInput = document.getElementById('start-date');
 const endDateInput = document.getElementById('end-date');
@@ -58,7 +58,12 @@ downloadBtn.addEventListener('click', async () => {
         alert('Please select both a start and end date.');
         return;
     }
+    if (new Date(startDate) > new Date(endDate)) {
+        alert('Start date cannot be after the end date.');
+        return;
+    }
 
+    console.log(`Requesting ZIP for ${cameraId} from ${startDate} to ${endDate}`);
     downloadBtn.disabled = true;
     downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Creating ZIP...';
 
@@ -73,39 +78,51 @@ downloadBtn.addEventListener('click', async () => {
             }),
         });
 
+        console.log("Response received from server:", response.status, response.statusText);
+
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Failed to create ZIP file.');
+            throw new Error(error.detail || `Server returned status ${response.status}`);
         }
 
         const blob = await response.blob();
+        console.log("Blob created, size:", blob.size);
+
+        if (blob.size === 0) {
+            throw new Error("Received an empty file from the server.");
+        }
+
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        // Extract filename from response header if available, otherwise create one
+        
         const disposition = response.headers.get('content-disposition');
         let filename = `captures_${cameraId}.zip`;
-        if (disposition && disposition.indexOf('attachment') !== -1) {
-            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-            const matches = filenameRegex.exec(disposition);
+        if (disposition && disposition.includes('attachment')) {
+            const matches = /filename="([^"]+)"/.exec(disposition);
             if (matches != null && matches[1]) {
-                filename = matches[1].replace(/['"]/g, '');
+                filename = matches[1];
             }
         }
         a.download = filename;
+        
         document.body.appendChild(a);
+        console.log("Triggering download for:", filename);
         a.click();
+        
         window.URL.revokeObjectURL(url);
         a.remove();
         
     } catch (error) {
+        console.error('Download failed:', error);
         alert(`Error: ${error.message}`);
     } finally {
         downloadBtn.disabled = false;
         downloadBtn.textContent = 'Download Images as ZIP';
     }
 });
+// ----------------------------
 
 // Initial load
 loadImages();

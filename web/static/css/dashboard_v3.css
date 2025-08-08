@@ -26,7 +26,6 @@ body {
 .dashboard-container {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    grid-template-rows: auto;
     gap: 1.5rem;
     padding: 1.5rem;
 }
@@ -48,122 +47,92 @@ body {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    color: var(--text-primary);
 }
 
 /* --- GRID PLACEMENT --- */
-/* PHASE 4: Alarm block takes full width */
 .alarm-card { grid-column: 1 / 13; }
 .animation-card { grid-column: 1 / 9; }
 .run-status-card { grid-column: 9 / 13; }
 .feeds-card { grid-column: 1 / 13; }
 .control-card { grid-column: 1 / 13; }
+.system-status-card { grid-column: 1 / 13; }
 
-/* --- PHASE 4: Alarm Card Styling --- */
-.alarm-card {
-    flex-direction: row;
-    align-items: center;
-    gap: 1.5rem;
-    background-color: #4a2a2a;
-    border-color: var(--accent-red);
-}
-.alarm-icon {
-    font-size: 2.5rem;
-    color: var(--accent-red);
-}
+/* --- Alarm Card Styling --- */
+.alarm-card { flex-direction: row; align-items: center; gap: 1.5rem; background-color: #4a2a2a; border-color: var(--accent-red); }
+.alarm-icon { font-size: 2.5rem; color: var(--accent-red); }
 .alarm-content { flex-grow: 1; }
-.alarm-title {
-    margin: 0;
-    font-size: 1rem;
-    letter-spacing: 0.1em;
-    color: var(--accent-red);
-}
-.alarm-message {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 500;
-}
+.alarm-title { margin: 0; font-size: 1rem; letter-spacing: 0.1em; color: var(--accent-red); }
+.alarm-message { margin: 0; font-size: 1.125rem; font-weight: 500; }
 
 /* --- Animation Card --- */
-.animation-card { padding: 0; overflow: hidden; }
 #animation-zone { position: relative; width: 100%; height: 200px; }
-#conveyor-belt {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background-color: #262b38;
-    background-image: linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c), linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c);
-    background-size: 40px 40px; background-position: 0 0, 20px 20px;
-}
+#conveyor-belt { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #262b38; background-image: linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c), linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c); background-size: 40px 40px; background-position: 0 0, 20px 20px; }
 #conveyor-belt.running { animation: scroll-background 2s linear infinite; }
-.box {
-    position: absolute; top: 50%; width: 60px; height: 60px;
-    background-color: #d2b48c; border: 2px solid #a07d5b; border-radius: 4px;
-    background-image: linear-gradient(rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-    transform: translate(-100%, -50%);
-}
+.box { position: absolute; top: 50%; width: 60px; height: 60px; background-color: #d2b48c; border: 2px solid #a07d5b; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); transform: translate(-100%, -50%); }
 #conveyor-belt.running .box { animation: move-box var(--box-transit-time) linear forwards; }
-#conveyor-overlay-info {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: rgba(18, 21, 30, 0.7); backdrop-filter: blur(8px);
-    border: 1px solid var(--border-color); border-radius: 1rem;
-    padding: 1rem 2rem; display: flex; gap: 3rem; align-items: center;
-}
+#conveyor-overlay-info { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(18, 21, 30, 0.7); backdrop-filter: blur(8px); border: 1px solid var(--border-color); border-radius: 1rem; padding: 1rem 2rem; display: flex; gap: 3rem; align-items: center; }
 .info-box { text-align: center; }
-.info-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+.info-label { font-size: 0.8rem; text-transform: uppercase; color: var(--text-secondary); }
 .info-value { font-size: 1.5rem; font-weight: 600; }
-.info-box-main .info-label { font-size: 1rem; }
 .info-box-main .info-value-main { font-size: 3rem; font-weight: 700; color: var(--accent-teal); }
-
 @keyframes scroll-background { from { background-position: 0 0, 20px 20px; } to { background-position: 40px 0, 60px 20px; } }
 @keyframes move-box { from { transform: translate(-100%, -50%); } to { transform: translate(calc(100vw - 200px), -50%); } }
 
 /* --- Live Feeds Card --- */
-.feeds-card { grid-column: 1 / 13; }
-.feeds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; flex-grow: 1; }
+/* THIS IS THE FIX: Set grid to two columns */
+.feeds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 .camera-feed-container { position: relative; background-color: #000; border-radius: 0.75rem; overflow: hidden; border: 1px solid var(--border-color); }
 .camera-feed-container img { width: 100%; display: block; aspect-ratio: 16 / 9; object-fit: cover; }
+.camera-title-overlay { position: absolute; z-index: 10; top: 8px; left: 8px; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); color: #fff; padding: 4px 10px; border-radius: 0.5rem; font-size: 0.8rem; }
 
 /* --- Run Status Card --- */
-.run-status-card { align-items: center; text-align: center; }
-.progress-container { position: relative; width: 100%; max-width: 180px; margin: 1rem 0; }
+.progress-container { position: relative; width: 100%; max-width: 180px; margin: 1rem auto; }
 .progress-container::before { content: ""; display: block; padding-top: 100%; }
 .progress-circle { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .progress-circle__trail, .progress-circle__path { fill: none; stroke-width: 10; stroke-linecap: round; }
 .progress-circle__trail { stroke: #374151; }
-.progress-circle__path { stroke: var(--accent-blue); transition: stroke-dashoffset 0.3s; }
+.progress-circle__path { stroke: var(--accent-blue); transition: stroke-dashoffset 0.3s; stroke-dasharray: 282.7; stroke-dashoffset: 282.7; }
 .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
 #progress-percentage { font-size: 2.25rem; font-weight: 700; }
 #progress-details { font-size: 0.875rem; color: var(--text-secondary); }
-.status-line { margin-top: 1rem; font-size: 1rem; }
 #active-profile-display { background-color: var(--text-secondary); color: #fff; }
 
 /* --- Control Card --- */
-.control-card { grid-column: 1 / 13; }
-/* PHASE 4: New grid for main controls */
-.control-grid-main { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1.5rem; }
+.control-grid-main { display: grid; grid-template-columns: 2fr 1.5fr 1fr; gap: 1.5rem; }
+.control-section .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary); }
 .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
 .form-group label { font-weight: 500; font-size: 0.875rem; }
-.form-control, .form-select {
-    background-color: var(--bg-inset); border: 1px solid var(--border-color);
-    color: var(--text-primary); border-radius: 0.5rem; padding: 0.75rem 1rem;
-}
+.form-control, .form-select { background-color: var(--bg-inset); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 0.5rem; padding: 0.75rem 1rem; }
 .control-buttons { display: flex; flex-direction: column; gap: 1rem; height: 100%; justify-content: flex-end;}
-.btn-control {
-    width: 100%; padding: 0.75rem; font-size: 1rem; font-weight: 600;
-    border-radius: 0.5rem; border: none; cursor: pointer;
-    transition: transform 0.1s ease, box-shadow 0.2s ease;
-}
-.btn-control:active { transform: scale(0.98); }
+.btn-control { padding: 0.75rem; font-size: 1rem; font-weight: 600; border-radius: 0.5rem; border: none; cursor: pointer; }
 .btn-start { background-color: var(--accent-green); color: #fff; }
 .btn-stop { background-color: var(--accent-red); color: #fff; }
 .btn-reset { background-color: var(--accent-amber); color: #1e293b; }
 
-/* Responsive Adjustments */
+/* --- System Status & Manual Control --- */
+.system-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+.status-item { background-color: var(--bg-inset); padding: 1rem; border-radius: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
+.status-label { display: flex; align-items: center; gap: 0.75rem; font-weight: 500; }
+.status-label i { color: var(--text-secondary); }
+.status-badge { padding: 0.25em 0.75em; border-radius: 6px; font-weight: 600; font-size: 0.875rem; color: #fff; min-width: 80px; text-align: center; }
+.status-badge.ok { background-color: var(--accent-green); }
+.status-badge.error { background-color: var(--accent-red); }
+.status-badge.warn { background-color: var(--accent-amber); color: #1e293b; }
+.status-badge.clear { background-color: #4b5563; }
+.toggle-switch { position: relative; display: inline-block; width: 52px; height: 28px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #374151; transition: .4s; border-radius: 28px; }
+.toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .toggle-slider { background-color: var(--accent-blue); }
+input:checked + .toggle-slider:before { transform: translateX(24px); }
+
+/* --- Responsive Adjustments --- */
 @media (max-width: 1200px) {
-    .animation-card { grid-column: 1 / 13; }
-    .run-status-card { grid-column: 1 / 13; }
+    .animation-card, .run-status-card { grid-column: 1 / 13; }
     .control-grid-main { grid-template-columns: 1fr; }
 }
+
 @media (max-width: 768px) {
+    /* Stack the camera feeds on small screens */
     .feeds-grid { grid-template-columns: 1fr; }
 }
