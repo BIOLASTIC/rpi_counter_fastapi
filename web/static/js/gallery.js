@@ -40,12 +40,11 @@ window.addEventListener('scroll', () => {
     }
 });
 
-// --- THIS IS THE ROBUST FIX ---
+// ZIP Download Logic
 const downloadBtn = document.getElementById('download-zip-btn');
 const startDateInput = document.getElementById('start-date');
 const endDateInput = document.getElementById('end-date');
 
-// Set default dates to today
 const today = new Date().toISOString().split('T')[0];
 startDateInput.value = today;
 endDateInput.value = today;
@@ -122,7 +121,6 @@ downloadBtn.addEventListener('click', async () => {
         downloadBtn.textContent = 'Download Images as ZIP';
     }
 });
-// ----------------------------
 
 // Initial load
 loadImages();
