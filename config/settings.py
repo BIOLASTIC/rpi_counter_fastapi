@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-dev_new/config/settings.py
+
 from functools import lru_cache
 from typing import Literal
 from pydantic import Field
@@ -14,11 +16,16 @@ class ServerSettings(BaseSettings):
 class SecuritySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SECURITY_', case_sensitive=False)
     API_KEY: str
+    JWT_SECRET_KEY: str = Field("a_very_long_and_secure_default_jwt_secret_key", min_length=32)
+    JWT_ALGORITHM: str = "HS256"
 
 class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='DB_', case_sensitive=False)
     URL: str = "sqlite+aiosqlite:///./data/box_counter.db"
     ECHO: bool = False
+    POOL_SIZE: int = 5
+    POOL_TIMEOUT: int = 30
+
 
 class BaseCameraSettings(BaseSettings):
     RESOLUTION_WIDTH: int = 1280
@@ -78,8 +85,8 @@ class ConveyorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
     SPEED_M_PER_SEC: float = 0.5
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
-    # --- PHASE 6: New setting for stalled product detection ---
     MAX_TRANSIT_TIME_SEC: float = Field(15.0, gt=0, description="Max time for a product to travel from entry to exit before a failure is triggered.")
+    AUTO_STOP_DELAY_SEC: float = Field(2.0, ge=0, description="Time to wait after the last object has cleared the exit sensor before stopping the conveyor.")
 
 
 # --- Main AppSettings Container ---
@@ -88,8 +95,10 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "10.0.0-No-AI"
+    PROJECT_VERSION: str = "11.0.0-Reporting"
     APP_ENV: Literal["development", "production"] = "development"
+    # --- NEW TIMEZONE SETTING ---
+    TIMEZONE: str = Field("UTC", description="The local timezone for displaying timestamps, e.g., 'America/New_York'.")
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"

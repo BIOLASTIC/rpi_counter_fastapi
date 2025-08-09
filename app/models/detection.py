@@ -1,38 +1,32 @@
 import uuid
 from datetime import datetime
-from enum import Enum as PyEnum
 from typing import Any, Dict
 
-from sqlalchemy import Integer, String, Boolean, Float, DateTime, Enum, JSON, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Integer, String, DateTime, JSON, ForeignKey, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+# This import is needed for the relationship
+from .run_log import RunLog
 
-class DetectionDirection(PyEnum):
-    FORWARD = "forward"
-    REVERSE = "reverse"
-    UNKNOWN = "unknown"
-
-class Detection(Base):
-    __tablename__ = "detections"
+class DetectionEventLog(Base):
+    """
+    Records a single detection event within a production run.
+    This creates a permanent link between a run and its captured images.
+    """
+    __tablename__ = "detection_event_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    session_id: Mapped[str] = mapped_column(String, default=lambda: str(uuid.uuid4()), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    box_count: Mapped[int] = mapped_column(Integer, nullable=False)
     
-    sensor_1_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
-    sensor_2_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Foreign key to the run this detection belongs to
+    run_log_id: Mapped[int] = mapped_column(ForeignKey("run_logs.id"), index=True)
     
-    processing_time_ms: Mapped[float] = mapped_column(Float, nullable=True)
-    confidence_score: Mapped[float] = mapped_column(Float, nullable=True)
-    image_path: Mapped[str] = mapped_column(String, nullable=True)
-    
-    detection_direction: Mapped[DetectionDirection] = mapped_column(Enum(DetectionDirection), default=DetectionDirection.UNKNOWN)
-    box_dimensions: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=True)
+    # The run this event belongs to
+    run: Mapped["RunLog"] = relationship(back_populates="detection_events")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    image_path: Mapped[str] = mapped_column(String, nullable=True)
+    details: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Detection(id={self.id}, time={self.timestamp}, count={self.box_count})>"
+        return f"<DetectionEventLog(id={self.id}, run_id={self.run_log_id}, image='{self.image_path}')>"

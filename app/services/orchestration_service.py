@@ -62,7 +62,6 @@ class AsyncOrchestrationService:
         self._active_run_id: Optional[int] = None
         self._active_alarm_message: Optional[str] = None
 
-        # Parameters for the current run configuration
         self._run_profile_id: Optional[int] = None
         self._run_batch_code: Optional[str] = None
         self._run_operator_id: Optional[int] = None
@@ -86,13 +85,23 @@ class AsyncOrchestrationService:
         """Returns the currently loaded ObjectProfile instance."""
         return self._active_profile
 
-    def on_box_processed(self):
-        """Callback for the detection service to increment the run counter."""
-        if self._mode == OperatingMode.RUNNING:
-            self._current_count += 1
-            if self._run_target_count > 0 and self._current_count >= self._run_target_count:
-                print("Orchestrator: Target count reached. Beginning pause and loop sequence.")
-                asyncio.create_task(self.complete_and_loop_run())
+    # NEW: Getter for the active run ID
+    def get_active_run_id(self) -> Optional[int]:
+        """Returns the ID of the currently active RunLog."""
+        return self._active_run_id
+
+    async def on_box_processed(self):
+        """Callback for the detection service to increment the run counter. Now async and atomic."""
+        task_to_run = None
+        async with self._lock:
+            if self._mode == OperatingMode.RUNNING:
+                self._current_count += 1
+                if self._run_target_count > 0 and self._current_count >= self._run_target_count:
+                    print("Orchestrator: Target count reached. Beginning pause and loop sequence.")
+                    task_to_run = asyncio.create_task(self.complete_and_loop_run())
+
+        if task_to_run:
+            await task_to_run
 
     async def trigger_persistent_alarm(self, message: str):
         """Sets a persistent alarm and activates the buzzer."""
@@ -133,19 +142,16 @@ class AsyncOrchestrationService:
 
             await self._update_run_log_status(RunStatus.FAILED)
             
-            # This becomes the new single point of state change for failures
             self._mode = OperatingMode.STOPPED
             self._active_profile, self._active_product, self._active_run_id = None, None, None
             self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
             
-            # Stop hardware but trigger alarm indicators
             await self._io.write_coil(self._output_map.CONVEYOR, False)
             await self._io.write_coil(self._output_map.GATE, False)
             await self._io.write_coil(self._output_map.DIVERTER, False)
             await self._io.write_coil(self._output_map.LED_GREEN, False)
             await self._io.write_coil(self._output_map.LED_RED, True)
             
-            # Finally, trigger the persistent alarm to notify the operator of the failure
             await self.trigger_persistent_alarm(f"CRITICAL FAILURE: {reason}")
 
 

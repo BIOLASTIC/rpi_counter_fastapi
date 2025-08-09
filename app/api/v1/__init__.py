@@ -10,6 +10,8 @@ from . import orchestration
 from . import products
 from . import operators
 from . import run_history
+# This line is correct from the traceback
+from . import reports
 
 # Create the main router for the v1 API.
 api_router = APIRouter()
@@ -24,3 +26,6 @@ api_router.include_router(orchestration.router, prefix="/orchestration", tags=["
 api_router.include_router(products.router, prefix="/products", tags=["Product Master"])
 api_router.include_router(operators.router, prefix="/operators", tags=["Operator Master"])
 api_router.include_router(run_history.router, prefix="/run-history", tags=["Run History"])
+
+# THIS IS THE FIX: The router from the 'reports' module must be included.
+api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])

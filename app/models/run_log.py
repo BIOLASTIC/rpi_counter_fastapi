@@ -1,14 +1,14 @@
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Dict
+from typing import Any, Dict, List # Import List
 from sqlalchemy import Integer, String, DateTime, Enum, JSON, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
-# These imports are needed for the relationships
 from .operator import Operator
 from .product import Product
-
+# The relationship needs to know about the class, but we use a string to avoid circular imports
+# from .detection import DetectionEventLog 
 
 class RunStatus(PyEnum):
     RUNNING = "Running"
@@ -32,6 +32,9 @@ class RunLog(Base):
 
     operator: Mapped["Operator"] = relationship()
     product: Mapped["Product"] = relationship()
+    
+    # New relationship to link to all detection events for this run
+    detection_events: Mapped[List["DetectionEventLog"]] = relationship(back_populates="run")
 
     def __repr__(self) -> str:
         return f"<RunLog(id={self.id}, batch_code='{self.batch_code}', status='{self.status.name}')>"

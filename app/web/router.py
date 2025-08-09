@@ -69,6 +69,14 @@ async def read_status_page(request: Request):
 @router.get("/hardware", response_class=HTMLResponse)
 async def read_hardware_page(request: Request):
     return NoCacheTemplateResponse(request, "hardware.html", {"request": request, "config": settings})
+    
+# --- THIS IS THE FIX ---
+# Add a new route to serve the dedicated Run History page.
+@router.get("/run-history", response_class=HTMLResponse)
+async def read_run_history_page(request: Request):
+    """Renders the detailed run history page."""
+    return NoCacheTemplateResponse(request, "run_history.html", {"request": request})
+# --- END OF FIX ---
 
 @router.get("/connections", response_class=HTMLResponse)
 async def read_connections_page(request: Request):
@@ -80,10 +88,8 @@ if 'rpi' in ACTIVE_CAMERA_IDS:
     async def read_live_view_rpi(request: Request):
         return NoCacheTemplateResponse(request, "live_view_rpi.html", {"request": request})
 
-    # --- THE FIX: Use the generic 'gallery.html' template ---
     @router.get("/gallery/rpi", response_class=HTMLResponse)
     async def read_gallery_rpi(request: Request):
-        # Pass the camera_id to the template
         context = {"request": request, "camera_id": "rpi", "camera_name": "RPi"}
         return NoCacheTemplateResponse(request, "gallery.html", context)
 
@@ -92,10 +98,8 @@ if 'usb' in ACTIVE_CAMERA_IDS:
     async def read_live_view_usb(request: Request):
         return NoCacheTemplateResponse(request, "live_view_usb.html", {"request": request})
 
-    # --- THE FIX: Use the generic 'gallery.html' template ---
     @router.get("/gallery/usb", response_class=HTMLResponse)
     async def read_gallery_usb(request: Request):
-        # Pass the camera_id to the template
         context = {"request": request, "camera_id": "usb", "camera_name": "USB"}
         return NoCacheTemplateResponse(request, "gallery.html", context)
 

@@ -74,12 +74,16 @@ async def lifespan(app: FastAPI):
         notification_service=app.state.notification_service,
         captures_dir=settings.CAMERA_CAPTURES_DIR
     )
+    
+    # MODIFIED: Pass the db session factory back in, as it's now required
     app.state.detection_service = AsyncDetectionService(
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
         orchestration_service=app.state.orchestration_service,
         conveyor_settings=settings.CONVEYOR,
+        db_session_factory=AsyncSessionFactory # This is now correct
     )
+
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
         event_callback=app.state.detection_service.handle_sensor_event,
@@ -106,20 +110,15 @@ async def lifespan(app: FastAPI):
     async def broadcast_updates():
         while True:
             try:
-                # --- THIS IS THE FIX ---
-                # 1. Gather all data first.
                 system_status = await app.state.system_service.get_system_status()
                 orchestration_status = app.state.orchestration_service.get_status()
 
-                # 2. Combine into a single payload.
                 full_status_payload = {
                     "system": system_status,
                     "orchestration": orchestration_status
                 }
 
-                # 3. Send one, unified message.
                 await websocket_manager.broadcast_json({"type": "full_status", "data": full_status_payload})
-                # --- END OF FIX ---
                 
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:

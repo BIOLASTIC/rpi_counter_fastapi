@@ -7,10 +7,11 @@
     <div class="card">
         <div class="card-header">
             <form id="filter-form" class="row g-3 align-items-end">
-                <div class="col-md-3"><label for="filter-start-date" class="form-label">Start Date</label><input type="date" id="filter-start-date" class="form-control"></div>
-                <div class="col-md-3"><label for="filter-end-date" class="form-label">End Date</label><input type="date" id="filter-end-date" class="form-control"></div>
+                <div class="col-md-2"><label for="filter-start-date" class="form-label">Start Date</label><input type="datetime-local" id="filter-start-date" class="form-control"></div>
+                <div class="col-md-2"><label for="filter-end-date" class="form-label">End Date</label><input type="datetime-local" id="filter-end-date" class="form-control"></div>
                 <div class="col-md-2"><label for="filter-product" class="form-label">Product</label><select id="filter-product" class="form-select"></select></div>
                 <div class="col-md-2"><label for="filter-operator" class="form-label">Operator</label><select id="filter-operator" class="form-select"></select></div>
+                <div class="col-md-2"><label for="filter-batch-code" class="form-label">Batch Code</label><input type="text" id="filter-batch-code" class="form-control"></div>
                 <div class="col-md-2 d-flex">
                     <button type="submit" class="btn btn-primary w-100 me-2">Filter</button>
                     <button type="button" id="reset-filter-btn" class="btn btn-secondary w-100">Reset</button>
@@ -23,12 +24,12 @@
                     <thead>
                         <tr>
                             <th>Start Time (UTC)</th>
-                            <th>End Time (UTC)</th>
                             <th>Status</th>
                             <th>Batch Code</th>
                             <th>Product</th>
                             <th>Operator</th>
-                            <th>Recipe Snapshot</th>
+                            <th>Recipe Used</th>
+                            <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
@@ -40,8 +41,31 @@
         </div>
     </div>
 </div>
+
+<!-- Modal for showing detection events -->
+<div class="modal fade" id="detections-modal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detections-modal-title">Detection Events for Run</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <p id="detections-modal-subtitle" class="text-muted mb-0">Images captured during the selected run.</p>
+                    <a href="#" id="download-run-zip-btn" class="btn btn-success" download>
+                        <i class="bi bi-file-earmark-zip-fill me-2"></i>Download All as ZIP
+                    </a>
+                </div>
+                <div id="detections-modal-body-content" class="bg-light p-3 rounded">
+                    <!-- JS will populate this -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/run_history.js"></script>
+<script src="/static/js/run_history.js?v=1.1"></script>
 {% endblock %}

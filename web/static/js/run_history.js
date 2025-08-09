@@ -1,85 +1,173 @@
-document.addEventListener('DOMContentLoaded', function () {
-    const tableBody = document.getElementById('history-table-body');
-    const filterForm = document.getElementById('filter-form');
-    const resetBtn = document.getElementById('reset-filter-btn');
-    const productSelect = document.getElementById('filter-product');
-    const operatorSelect = document.getElementById('filter-operator');
+document.addEventListener("DOMContentLoaded", function () {
+    const historyTableBody = document.getElementById("history-table-body");
+    const filterForm = document.getElementById("filter-form");
+    const resetFilterBtn = document.getElementById("reset-filter-btn");
+    const productFilter = document.getElementById("filter-product");
+    const operatorFilter = document.getElementById("filter-operator");
+    const batchCodeFilter = document.getElementById("filter-batch-code");
 
-    async function populateSelect(element, url, nameField, prompt) {
+    // Modal elements
+    const detectionsModal = new bootstrap.Modal(document.getElementById('detections-modal'));
+    const detectionsModalTitle = document.getElementById('detections-modal-title');
+    const detectionsModalSubtitle = document.getElementById('detections-modal-subtitle');
+    const detectionsModalBody = document.getElementById('detections-modal-body-content');
+    const downloadZipBtn = document.getElementById('download-run-zip-btn');
+
+    const API_BASE = "/api/v1";
+
+    async function fetchAndPopulateFilters() {
         try {
-            const response = await fetch(url);
-            const items = await response.json();
-            element.innerHTML = `<option value="">All ${prompt}s</option>`;
-            items.forEach(item => {
-                element.innerHTML += `<option value="${item.id}">${item[nameField]}</option>`;
-            });
+            const [productsRes, operatorsRes] = await Promise.all([
+                fetch(`${API_BASE}/products/`),
+                fetch(`${API_BASE}/operators/`)
+            ]);
+            const products = await productsRes.json();
+            const operators = await operatorsRes.json();
+
+            productFilter.innerHTML = '<option value="">All Products</option>' + products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+            operatorFilter.innerHTML = '<option value="">All Operators</option>' + operators.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
         } catch (error) {
-            console.error(`Failed to load ${prompt}s:`, error);
+            console.error("Failed to populate filters:", error);
         }
     }
 
-    async function loadHistory(params = {}) {
-        tableBody.innerHTML = '<tr><td colspan="7" class="text-center">Loading...</td></tr>';
-        const query = new URLSearchParams(params).toString();
-        
+    async function fetchRunHistory(params = {}) {
+        historyTableBody.innerHTML = `<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
+        const urlParams = new URLSearchParams(params);
         try {
-            const response = await fetch(`/api/v1/run-history?${query}`);
-            if (!response.ok) throw new Error('Failed to fetch run history');
-            const logs = await response.json();
+            const response = await fetch(`${API_BASE}/run-history/?${urlParams}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const runs = await response.json();
+            renderTable(runs);
+        } catch (error) {
+            console.error("Failed to fetch run history:", error);
+            historyTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Failed to load data.</td></tr>`;
+        }
+    }
 
-            tableBody.innerHTML = '';
-            if (logs.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="7" class="text-center">No run logs found for the selected criteria.</td></tr>';
+    function renderTable(runs) {
+        if (!runs || runs.length === 0) {
+            historyTableBody.innerHTML = `<tr><td colspan="7" class="text-center">No run history found matching criteria.</td></tr>`;
+            return;
+        }
+
+        historyTableBody.innerHTML = runs.map(run => `
+            <tr id="run-${run.id}">
+                <td>${new Date(run.start_timestamp).toLocaleString()}</td>
+                <td><span class="badge bg-${getStatusColor(run.status)}">${run.status}</span></td>
+                <td>${run.batch_code}</td>
+                <td>${run.product ? run.product.name : 'N/A'}</td>
+                <td>${run.operator ? run.operator.name : 'N/A'}</td>
+                <td><pre class="small p-1 bg-light border rounded">${JSON.stringify(run.object_profile_snapshot, null, 2)}</pre></td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-primary view-detections-btn" data-run-id="${run.id}" data-batch-code="${run.batch_code}">
+                        <i class="bi bi-images"></i> View Images
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function getStatusColor(status) {
+        switch (status) {
+            case 'Completed': return 'success';
+            case 'Running': return 'info';
+            case 'Aborted by User': return 'warning';
+            case 'Failed': return 'danger';
+            default: return 'secondary';
+        }
+    }
+
+    filterForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const startDate = document.getElementById('filter-start-date').value;
+        const endDate = document.getElementById('filter-end-date').value;
+        const params = {
+            start_date: startDate ? new Date(startDate).toISOString() : '',
+            end_date: endDate ? new Date(endDate).toISOString() : '',
+            product_id: productFilter.value,
+            operator_id: operatorFilter.value,
+            batch_code: batchCodeFilter.value,
+        };
+        const cleanedParams = Object.fromEntries(Object.entries(params).filter(([_, v]) => v != null && v !== ''));
+        fetchRunHistory(cleanedParams);
+    });
+
+    resetFilterBtn.addEventListener("click", () => {
+        filterForm.reset();
+        fetchRunHistory();
+    });
+
+    historyTableBody.addEventListener('click', async (event) => {
+        const target = event.target.closest('.view-detections-btn');
+        if (target) {
+            const runId = target.dataset.runId;
+            const batchCode = target.dataset.batchCode;
+            await openDetectionsModal(runId, batchCode);
+        }
+    });
+
+    async function openDetectionsModal(runId, batchCode) {
+        detectionsModalTitle.textContent = `Detection Events for Run: ${batchCode}`;
+        detectionsModalBody.innerHTML = `<div class="text-center"><div class="spinner-border" role="status"></div><p>Loading images...</p></div>`;
+        downloadZipBtn.href = `${API_BASE}/run-history/${runId}/download-images`;
+        detectionsModal.show();
+
+        try {
+            const response = await fetch(`${API_BASE}/run-history/${runId}/detections`);
+            if (!response.ok) throw new Error(`Failed to fetch detections. Status: ${response.status}`);
+            
+            const detections = await response.json();
+            
+            detectionsModalSubtitle.textContent = `${detections.length} image(s) captured during this run.`;
+
+            if (detections.length === 0) {
+                detectionsModalBody.innerHTML = `<div class="alert alert-warning">No detection events with images were logged for this run.</div>`;
+                downloadZipBtn.classList.add('disabled');
                 return;
             }
 
-            logs.forEach(log => {
-                const statusColors = {
-                    'Completed': 'bg-success',
-                    'Running': 'bg-info text-dark',
-                    'Failed': 'bg-danger',
-                    'Aborted by User': 'bg-warning text-dark'
-                };
-                const statusBadge = statusColors[log.status] || 'bg-secondary';
-                const snapshot = log.object_profile_snapshot ? JSON.stringify(log.object_profile_snapshot, null, 2) : 'N/A';
+            downloadZipBtn.classList.remove('disabled');
 
-                const row = `
-                    <tr>
-                        <td>${new Date(log.start_timestamp).toLocaleString()}</td>
-                        <td>${log.end_timestamp ? new Date(log.end_timestamp).toLocaleString() : 'N/A'}</td>
-                        <td><span class="badge ${statusBadge}">${log.status}</span></td>
-                        <td>${log.batch_code}</td>
-                        <td>${log.product ? log.product.name : 'N/A'}</td>
-                        <td>${log.operator ? log.operator.name : 'N/A'}</td>
-                        <td><pre class="mb-0"><code>${snapshot}</code></pre></td>
-                    </tr>`;
-                tableBody.innerHTML += row;
+            let galleryHTML = '<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">';
+            detections.forEach(det => {
+                const placeholder = '/static/images/placeholder.jpg';
+                galleryHTML += `
+                    <div class="col">
+                        <div class="card h-100">
+                            <a href="${det.image_path || placeholder}" target="_blank">
+                                <img src="${det.image_path || placeholder}" class="card-img-top" alt="Detection Image" loading="lazy" style="aspect-ratio: 16/9; object-fit: cover;">
+                            </a>
+                            <div class="card-footer text-muted small">
+                                ${new Date(det.timestamp).toLocaleString()}
+                            </div>
+                        </div>
+                    </div>
+                `;
             });
+            galleryHTML += '</div>';
+            detectionsModalBody.innerHTML = galleryHTML;
+
         } catch (error) {
-            console.error('Error loading history:', error);
-            tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Error loading run history.</td></tr>`;
+            console.error("Error loading detections:", error);
+            detectionsModalBody.innerHTML = `<div class="alert alert-danger">Error: Could not load detection images.</div>`;
         }
     }
+    
+    // Check for a hash in the URL on page load to auto-open a modal
+    if(window.location.hash) {
+        const runId = window.location.hash.replace('#run-', '');
+        // We need the batch code, so we wait for the table to render first
+        // This is a bit of a hack, but works for this purpose
+        setTimeout(() => {
+            const targetButton = document.querySelector(`.view-detections-btn[data-run-id='${runId}']`);
+            if (targetButton) {
+                openDetectionsModal(runId, targetButton.dataset.batchCode);
+            }
+        }, 1500); // wait 1.5s for initial data to load
+    }
 
-    filterForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const params = {
-            start_date: document.getElementById('filter-start-date').value ? new Date(document.getElementById('filter-start-date').value).toISOString() : '',
-            end_date: document.getElementById('filter-end-date').value ? new Date(document.getElementById('filter-end-date').value).toISOString() : '',
-            product_id: productSelect.value,
-            operator_id: operatorSelect.value
-        };
-        const cleanedParams = Object.fromEntries(Object.entries(params).filter(([_, v]) => v));
-        loadHistory(cleanedParams);
-    });
 
-    resetBtn.addEventListener('click', () => {
-        filterForm.reset();
-        loadHistory();
-    });
-
-    // Initial Load
-    populateSelect(productSelect, '/api/v1/products', 'name', 'Product');
-    populateSelect(operatorSelect, '/api/v1/operators', 'name', 'Operator');
-    loadHistory();
+    fetchAndPopulateFilters();
+    fetchRunHistory();
 });
