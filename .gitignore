@@ -66,6 +66,7 @@ static/captures/
 web/static/captures
 web/static/captures/rpi
 web/static/captures/usb
+web/static/captures*
 data/
 logs/
 *.log

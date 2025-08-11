@@ -1,19 +1,18 @@
 """
-FINAL REVISION: The source of the Jinja2 TemplateNotFound error is fixed.
-- All template paths in this file have been corrected to remove the 'pages/'
-  prefix, matching the new, simplified flat template directory structure.
-REVISED: The gallery routes now use a single, dynamic template.
+Web routes for serving HTML pages.
 """
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from pathlib import Path
+import markdown2 # <-- NEW: Import the markdown library
 
 from app.models import get_async_session, EventLog, ObjectProfile
 from config import settings, ACTIVE_CAMERA_IDS
 
 router = APIRouter(tags=["Web Dashboard"])
+PROJECT_ROOT = Path(__file__).parent.parent.parent # Define project root
 
 def NoCacheTemplateResponse(request: Request, name: str, context: dict):
     """A helper that adds no-cache headers and injects global context."""
@@ -27,40 +26,27 @@ def NoCacheTemplateResponse(request: Request, name: str, context: dict):
     }
     return templates.TemplateResponse(name, context, headers=headers)
 
+# ... (all existing routes like @router.get("/"), @router.get("/management/recipes"), etc.)
+# ... (They are unchanged, so I am omitting them for brevity)
 
 @router.get("/", response_class=HTMLResponse)
-async def read_dashboard(
-    request: Request,
-    db: AsyncSession = Depends(get_async_session)
-):
-    """Passes the list of object profiles to the main dashboard."""
+async def read_dashboard(request: Request, db: AsyncSession = Depends(get_async_session)):
     result = await db.execute(select(ObjectProfile).order_by(ObjectProfile.name))
     object_profiles = result.scalars().all()
-    
-    context = {
-        "request": request,
-        "object_profiles": object_profiles,
-        "animation_time": settings.UI_ANIMATION_TRANSIT_TIME_SEC
-    }
+    context = {"request": request, "object_profiles": object_profiles, "animation_time": settings.UI_ANIMATION_TRANSIT_TIME_SEC}
     return NoCacheTemplateResponse(request, "dashboard.html", context)
 
-# --- PHASE 2: Route for Object Profile management page renamed for clarity ---
 @router.get("/management/recipes", response_class=HTMLResponse)
 async def read_profiles_page(request: Request):
-    """Renders the main profile management page."""
     return NoCacheTemplateResponse(request, "profiles.html", {"request": request})
 
-# --- PHASE 2: New routes for Product and Operator management ---
 @router.get("/management/products", response_class=HTMLResponse)
 async def read_products_page(request: Request):
-    """Renders the product master management page."""
     return NoCacheTemplateResponse(request, "products.html", {"request": request})
 
 @router.get("/management/operators", response_class=HTMLResponse)
 async def read_operators_page(request: Request):
-    """Renders the operator management page."""
     return NoCacheTemplateResponse(request, "operators.html", {"request": request})
-
 
 @router.get("/status", response_class=HTMLResponse)
 async def read_status_page(request: Request):
@@ -70,24 +56,49 @@ async def read_status_page(request: Request):
 async def read_hardware_page(request: Request):
     return NoCacheTemplateResponse(request, "hardware.html", {"request": request, "config": settings})
     
-# --- THIS IS THE FIX ---
-# Add a new route to serve the dedicated Run History page.
 @router.get("/run-history", response_class=HTMLResponse)
 async def read_run_history_page(request: Request):
-    """Renders the detailed run history page."""
     return NoCacheTemplateResponse(request, "run_history.html", {"request": request})
-# --- END OF FIX ---
 
+# --- THIS IS THE NEW FEATURE ---
+@router.get("/help/{page_name}", response_class=HTMLResponse)
+async def read_help_page(request: Request, page_name: str):
+    """
+    Reads a markdown file from the docs/manuals directory, converts it to HTML,
+    and renders it in a template.
+    """
+    # Sanitize page_name to prevent directory traversal attacks
+    if ".." in page_name or "/" in page_name:
+        raise HTTPException(status_code=404, detail="Help page not found.")
+
+    file_path = PROJECT_ROOT / "docs" / "manuals" / f"{page_name}.md"
+    
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Help page not found.")
+        
+    # Read markdown content
+    markdown_text = file_path.read_text()
+    
+    # Convert to HTML
+    html_content = markdown2.markdown(markdown_text, extras=["fenced-code-blocks", "tables", "admonitions"])
+    
+    # Capitalize the title for display
+    title = page_name.replace("_", " ").capitalize()
+    
+    context = {"request": request, "title": title, "content": html_content}
+    return NoCacheTemplateResponse(request, "help.html", context)
+# --- END OF NEW FEATURE ---
+
+# ... (all other existing routes like camera views, logs, etc.)
+# ... (They are also unchanged)
 @router.get("/connections", response_class=HTMLResponse)
 async def read_connections_page(request: Request):
     return NoCacheTemplateResponse(request, "connections.html", {"request": request, "config": settings})
 
-# Conditionally add routes based on config
 if 'rpi' in ACTIVE_CAMERA_IDS:
     @router.get("/live-view/rpi", response_class=HTMLResponse)
     async def read_live_view_rpi(request: Request):
         return NoCacheTemplateResponse(request, "live_view_rpi.html", {"request": request})
-
     @router.get("/gallery/rpi", response_class=HTMLResponse)
     async def read_gallery_rpi(request: Request):
         context = {"request": request, "camera_id": "rpi", "camera_name": "RPi"}
@@ -97,7 +108,6 @@ if 'usb' in ACTIVE_CAMERA_IDS:
     @router.get("/live-view/usb", response_class=HTMLResponse)
     async def read_live_view_usb(request: Request):
         return NoCacheTemplateResponse(request, "live_view_usb.html", {"request": request})
-
     @router.get("/gallery/usb", response_class=HTMLResponse)
     async def read_gallery_usb(request: Request):
         context = {"request": request, "camera_id": "usb", "camera_name": "USB"}
@@ -105,9 +115,7 @@ if 'usb' in ACTIVE_CAMERA_IDS:
 
 @router.get("/logs", response_class=HTMLResponse)
 async def read_logs_page(request: Request, session: AsyncSession = Depends(get_async_session)):
-    result = await session.execute(
-        select(EventLog).order_by(EventLog.timestamp.desc()).limit(100)
-    )
+    result = await session.execute(select(EventLog).order_by(EventLog.timestamp.desc()).limit(100))
     logs = result.scalars().all()
     context = {"request": request, "logs": logs}
     return NoCacheTemplateResponse(request, "logs.html", context)
@@ -115,10 +123,5 @@ async def read_logs_page(request: Request, session: AsyncSession = Depends(get_a
 @router.get("/api-docs", response_class=HTMLResponse)
 async def read_api_docs_page(request: Request):
     openapi_schema = request.app.openapi()
-    context = {
-        "request": request,
-        "api_title": openapi_schema.get("info", {}).get("title", "API"),
-        "api_version": openapi_schema.get("info", {}).get("version", ""),
-        "api_paths": openapi_schema.get("paths", {})
-    }
+    context = {"request": request, "api_title": openapi_schema.get("info", {}).get("title", "API"), "api_version": openapi_schema.get("info", {}).get("version", ""), "api_paths": openapi_schema.get("paths", {})}
     return NoCacheTemplateResponse(request, "api.html", context)

@@ -31,7 +31,6 @@
                         </ul>
                     </li>
                     
-                    <!-- NEW: Add direct link to Run History -->
                     <li class="nav-item"><a class="nav-link" href="/run-history">Run History</a></li>
 
                     <li class="nav-item dropdown">
@@ -54,6 +53,21 @@
                             {% endif %}
                         </ul>
                     </li>
+                    
+                    <!-- NEW: Help Menu Dropdown -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="helpDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                           <i class="bi bi-question-circle-fill"></i> Help
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="helpDropdown">
+                            <li><a class="dropdown-item" href="/help/operator_manual">Operator Manual</a></li>
+                            <li><a class="dropdown-item" href="/help/safety_instructions">Safety Instructions</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/help/ai_features">AI Features</a></li>
+                            <li><a class="dropdown-item" href="/help/ai_labelling">AI Labelling</a></li>
+                        </ul>
+                    </li>
+                    <!-- END: Help Menu Dropdown -->
 
                     <li class="nav-item"><a class="nav-link" href="/logs">Event Logs</a></li>
                     <li class="nav-item"><a class="nav-link" href="/api-docs">API Docs</a></li>
