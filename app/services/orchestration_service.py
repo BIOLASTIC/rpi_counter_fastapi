@@ -8,7 +8,7 @@ import json
 from enum import Enum
 from typing import Optional, Any, Dict
 from datetime import datetime
-import time # NEW: Import time for monotonic clock
+import time 
 
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,15 +61,9 @@ class AsyncOrchestrationService:
         
         self._output_map = self._settings.OUTPUTS
         
-        # --- NEW: Buzzer Manager state ---
         self._buzzer_queue = asyncio.Queue()
         self._buzzer_task: Optional[asyncio.Task] = None
-        # --- END NEW ---
 
-    # --- REMOVED: The old, flawed beep function is gone ---
-    # async def _trigger_timed_beep(self, duration_sec: float): ...
-
-    # --- MODIFIED: This function now queues a request instead of creating a task ---
     def beep_for(self, duration_ms: int):
         """Queues a non-blocking beep request for the buzzer manager."""
         if duration_ms > 0:
@@ -78,7 +72,6 @@ class AsyncOrchestrationService:
             except asyncio.QueueFull:
                 print("Buzzer queue is full, dropping request.")
 
-    # --- NEW: The robust Buzzer Manager task ---
     async def _buzzer_manager(self):
         """A single, long-running task to manage all buzzer requests."""
         buzzer_off_time = 0.0
@@ -86,11 +79,9 @@ class AsyncOrchestrationService:
         
         while True:
             try:
-                # Wait for a new request, but with a timeout so we can check the state
                 try:
                     duration_ms = await asyncio.wait_for(self._buzzer_queue.get(), timeout=0.05)
                     new_off_time = time.monotonic() + (duration_ms / 1000.0)
-                    # If the new request is longer than the current one, extend the time
                     if new_off_time > buzzer_off_time:
                         buzzer_off_time = new_off_time
                     self._buzzer_queue.task_done()
@@ -99,27 +90,23 @@ class AsyncOrchestrationService:
 
                 current_time = time.monotonic()
                 
-                # Check if the buzzer should be on
                 if current_time < buzzer_off_time:
                     if not is_buzzer_on:
                         await self._io.write_coil(self._output_map.BUZZER, True)
                         is_buzzer_on = True
-                # Check if the buzzer should be off
                 else:
                     if is_buzzer_on:
                         await self._io.write_coil(self._output_map.BUZZER, False)
                         is_buzzer_on = False
-                        buzzer_off_time = 0.0 # Reset time
+                        buzzer_off_time = 0.0
             except asyncio.CancelledError:
-                # Ensure buzzer is turned off on exit
                 if is_buzzer_on:
                     await self._io.write_coil(self._output_map.BUZZER, False)
                 break
             except Exception as e:
                 print(f"Error in buzzer manager: {e}")
-                await asyncio.sleep(1) # Prevent rapid-fire error loops
+                await asyncio.sleep(1)
 
-    # --- NEW: Methods to start and stop background tasks for this service ---
     def start_background_tasks(self):
         """Starts the background tasks managed by this service."""
         if self._buzzer_task is None or self._buzzer_task.done():
@@ -132,8 +119,8 @@ class AsyncOrchestrationService:
             self._buzzer_task.cancel()
             print("Orchestration Service: Buzzer manager task stopped.")
 
-    # ... (the rest of the file remains exactly the same as the previous version) ...
     async def initialize_hardware_state(self):
+        print("Orchestrator: Setting initial hardware state to STOPPED.")
         await self._io.write_coil(self._output_map.GATE, False)
         await self._io.write_coil(self._output_map.DIVERTER, False)
         await self._io.write_coil(self._output_map.CONVEYOR, False)
@@ -153,20 +140,26 @@ class AsyncOrchestrationService:
             if self._mode == OperatingMode.RUNNING:
                 self._current_count += 1
                 if self._run_target_count > 0 and self._current_count >= self._run_target_count:
+                    print("Orchestrator: Target count reached. Beginning stop delay sequence.")
                     task_to_run = asyncio.create_task(self.complete_and_loop_run())
         if task_to_run:
             await task_to_run
 
     async def on_exit_sensor_triggered(self):
+        """Triggers a short beep when the exit sensor is hit."""
         self.beep_for(self._settings.BUZZER.EXIT_SENSOR_MS)
 
     async def trigger_persistent_alarm(self, message: str):
         self.beep_for(self._settings.BUZZER.MISMATCH_MS)
         if self._active_alarm_message: return
         self._active_alarm_message = message
+        print(f"ORCHESTRATION ALARM: {message}")
         try:
             async with self._get_db_session() as session:
-                log_entry = EventLog(event_type=EventType.WARNING, source="ORCHESTRATION", message=message, details={"run_log_id": self._active_run_id, "batch_code": self._run_batch_code})
+                log_entry = EventLog(
+                    event_type=EventType.WARNING, source="ORCHESTRATION", message=message,
+                    details={"run_log_id": self._active_run_id, "batch_code": self._run_batch_code}
+                )
                 session.add(log_entry)
                 await session.commit()
         except Exception as e:
@@ -175,9 +168,13 @@ class AsyncOrchestrationService:
     async def trigger_run_failure(self, reason: str):
         async with self._lock:
             if self._mode != OperatingMode.RUNNING: return
+            print(f"CRITICAL RUN FAILURE: {reason}. Stopping all operations.")
             try:
                 async with self._get_db_session() as session:
-                    log_entry = EventLog(event_type=EventType.ERROR, source="SYSTEM_FAILURE", message=reason, details={"run_log_id": self._active_run_id, "batch_code": self._run_batch_code})
+                    log_entry = EventLog(
+                        event_type=EventType.ERROR, source="SYSTEM_FAILURE", message=reason,
+                        details={"run_log_id": self._active_run_id, "batch_code": self._run_batch_code}
+                    )
                     session.add(log_entry)
                     await session.commit()
             except Exception as e:
@@ -192,22 +189,27 @@ class AsyncOrchestrationService:
 
     async def acknowledge_alarm(self):
         if not self._active_alarm_message: return
+        print(f"Orchestrator: Alarm '{self._active_alarm_message}' acknowledged by user.")
         self._active_alarm_message = None
 
     async def start_run(self, profile_id: int, target_count: int, post_batch_delay_sec: int, batch_code: str, operator_id: int) -> bool:
         async with self._lock:
             if self._mode in [OperatingMode.RUNNING, OperatingMode.PAUSED_BETWEEN_BATCHES, OperatingMode.POST_RUN_DELAY]:
                 return False
+            
             async with self._get_db_session() as session:
                 operator = await session.get(Operator, operator_id)
                 if not operator:
+                    print(f"Orchestrator: Run start failed. Operator with ID {operator_id} not found.")
                     return False
                 self._run_operator_name = operator.name
+            
             self._run_profile_id, self._run_target_count, self._run_post_batch_delay_sec, self._run_batch_code, self._run_operator_id = \
                 profile_id, target_count, post_batch_delay_sec, batch_code, operator_id
             return await self._execute_start_sequence()
-
+            
     async def _execute_start_sequence(self) -> bool:
+        """Internal method to start a batch. Can be called to loop."""
         async with self._get_db_session() as session:
             result = await session.execute(
                 select(ObjectProfile).options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
@@ -238,10 +240,12 @@ class AsyncOrchestrationService:
         await self.acknowledge_alarm()
         self.beep_for(self._settings.BUZZER.MANUAL_TOGGLE_MS)
 
+        print(f"Orchestrator: Loaded Active Profile -> '{profile.name}' for new batch. RunLog ID: {self._active_run_id}")
         cam_settings = profile.camera_profile
         command = {"action": "apply_settings", "settings": {"autofocus": cam_settings.autofocus, "exposure": cam_settings.exposure, "gain": cam_settings.gain, "white_balance_temp": cam_settings.white_balance_temp, "brightness": cam_settings.brightness}}
+        command_bytes = json.dumps(command).encode('utf-8')
         for cam_id in ACTIVE_CAMERA_IDS:
-            await self._redis.publish(f"camera:commands:{cam_id}", json.dumps(command))
+            await self._redis.publish(f"camera:commands:{cam_id}", command_bytes)
         
         self._current_count, self._mode = 0, OperatingMode.RUNNING
         await self._io.write_coil(self._output_map.LED_RED, False)
@@ -261,26 +265,39 @@ class AsyncOrchestrationService:
             print(f"Error updating RunLog status: {e}")
 
     async def complete_and_loop_run(self):
+        """
+        Sequence for when a batch target is met.
+        """
         async with self._lock:
             if self._mode != OperatingMode.RUNNING: return
+            
             await self._update_run_log_status(RunStatus.COMPLETED)
             self.beep_for(self._settings.BUZZER.LOOP_COMPLETE_MS)
+            
             self._mode = OperatingMode.POST_RUN_DELAY
             stop_delay = self._settings.CONVEYOR.CONVEYOR_AUTO_STOP_DELAY_SEC
+            print(f"Orchestrator: Batch complete. Conveyor will stop in {stop_delay}s.")
+
         await asyncio.sleep(stop_delay)
+
         async with self._lock:
             if self._mode != OperatingMode.POST_RUN_DELAY: return
             await self._io.write_coil(self._output_map.CONVEYOR, False)
             self._mode = OperatingMode.PAUSED_BETWEEN_BATCHES
             pause_delay = self._run_post_batch_delay_sec
+            print(f"Orchestrator: Conveyor stopped. Pausing for {pause_delay}s before next batch.")
+
         await asyncio.sleep(pause_delay)
+
         async with self._lock:
             if self._mode != OperatingMode.PAUSED_BETWEEN_BATCHES: return
+            print("Orchestrator: Pause finished. Looping to next batch...")
             await self._execute_start_sequence()
 
     async def stop_run(self):
         async with self._lock:
             if self._mode == OperatingMode.STOPPED: return
+            print("Orchestrator: STOP command received. Halting all operations.")
             if self._active_run_id and self._mode != OperatingMode.STOPPED:
                 await self._update_run_log_status(RunStatus.ABORTED)
             self._mode = OperatingMode.STOPPED

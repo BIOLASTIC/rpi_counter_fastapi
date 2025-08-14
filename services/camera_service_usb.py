@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-dev2/services/camera_service_usb.py
+
 """
 Standalone Camera Service for a USB V4L2 Camera.
 FINAL ARCHITECTURE: This service is now a 'dumb' command receiver.
@@ -67,7 +69,8 @@ def apply_camera_settings(settings_dict: dict):
 
     exposure = settings_dict.get('exposure', 0)
     if exposure != 0:
-        camera.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+        # Note: The value for AUTO_EXPOSURE can vary. 1 is often 'manual', 3 is 'auto'.
+        camera.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) 
         camera.set(cv2.CAP_PROP_EXPOSURE, exposure)
         print(f"  -> Manual Exposure: {exposure}", flush=True)
     else:
@@ -85,7 +88,10 @@ def command_listener(redis_client: redis.Redis):
     for message in pubsub.listen():
         if message['type'] == 'message':
             try:
-                command = json.loads(message['data'])
+                # Decode bytes to string, then parse JSON
+                command_str = message['data'].decode('utf-8')
+                command = json.loads(command_str)
+                
                 if command.get('action') == 'apply_settings':
                     settings_to_apply = command.get('settings')
                     if isinstance(settings_to_apply, dict):
@@ -99,7 +105,8 @@ def main():
     redis_client = None
 
     try:
-        redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+        # Connect to Redis, ensuring it handles raw bytes
+        redis_client = redis.Redis(host='localhost', port=6379, decode_responses=False)
         redis_client.ping()
         print("[USB Camera Service] Redis connection successful.", flush=True)
 
@@ -112,6 +119,7 @@ def main():
             raise RuntimeError(f"Could not open camera at index {hardware_settings.DEVICE_INDEX}.")
         print("[USB Camera Service] Camera opened successfully.", flush=True)
 
+        # Apply default "auto" settings on startup
         apply_camera_settings({})
         
         frame_channel = 'camera:frames:usb'
@@ -128,6 +136,7 @@ def main():
                 continue
 
             _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, hardware_settings.JPEG_QUALITY])
+            # Publish the raw bytes of the JPEG image
             redis_client.publish(frame_channel, buffer.tobytes())
             frame_count += 1
             
@@ -138,13 +147,14 @@ def main():
                 frame_count = 0
                 last_log_time = current_time
 
-
     except Exception as e:
         print(f"[USB Camera Service] FATAL ERROR: {e}", flush=True)
         print(traceback.format_exc(), flush=True)
     finally:
-        if camera and camera.isOpened(): camera.release()
-        if redis_client: redis_client.close()
+        if camera and camera.isOpened():
+            camera.release()
+        if redis_client:
+            redis_client.close()
         print("[USB Camera Service] Exited.", flush=True)
 
 if __name__ == "__main__":

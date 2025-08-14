@@ -1,8 +1,6 @@
 # rpi_counter_fastapi-dev2/main.py
 
-"""
-The main application entry point.
-"""
+# ... (imports are the same)
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,18 +11,14 @@ from fastapi.templating import Jinja2Templates
 import redis.asyncio as redis
 
 PROJECT_ROOT = Path(__file__).parent
-
 from config import settings, ACTIVE_CAMERA_IDS
 from app.models.database import engine, Base, AsyncSessionFactory
 from app.api.v1 import api_router as api_v1_router
 from app.web.router import router as web_router
 from app.websocket.router import router as websocket_router
 from app.middleware.metrics_middleware import MetricsMiddleware
-
 if settings.APP_ENV == "development":
     from app.api.v1 import debug as debug_router
-
-# Import all core services
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.modbus_poller import AsyncModbusPoller
@@ -34,7 +28,7 @@ from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
 from app.websocket.connection_manager import manager as websocket_manager
 
-
+# ... (NoCacheStaticFiles class is the same)
 class NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> Response:
         response = await super().get_response(path, scope)
@@ -42,7 +36,6 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,7 +45,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
 
-    app.state.redis_client = redis.from_url("redis://localhost", decode_responses=True)
+    # --- THIS IS THE FIX ---
+    # `decode_responses` is set to False. The client will now handle raw bytes,
+    # preventing the UnicodeDecodeError with image data.
+    app.state.redis_client = redis.from_url("redis://localhost", decode_responses=False)
+    # --- END OF FIX ---
 
     # Initialize all application services
     app.state.modbus_controller = await AsyncModbusController.get_instance()
@@ -63,18 +60,12 @@ async def lifespan(app: FastAPI):
         app_settings=settings
     )
     app.state.notification_service = AsyncNotificationService(db_session_factory=AsyncSessionFactory)
-    
-    # --- THIS IS THE FIX (PART 1) ---
-    # We now pass the ACTIVE_CAMERA_IDS list into the service constructor.
     app.state.camera_manager = AsyncCameraManager(
         notification_service=app.state.notification_service,
         captures_dir=settings.CAMERA_CAPTURES_DIR,
         redis_client=app.state.redis_client,
         active_camera_ids=ACTIVE_CAMERA_IDS
     )
-    
-    # --- THIS IS THE FIX (PART 2) ---
-    # We do the same for the detection service.
     app.state.detection_service = AsyncDetectionService(
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
@@ -83,8 +74,6 @@ async def lifespan(app: FastAPI):
         db_session_factory=AsyncSessionFactory,
         active_camera_ids=ACTIVE_CAMERA_IDS
     )
-    # --- END OF FIX ---
-
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
         event_callback=app.state.detection_service.handle_sensor_event,
@@ -108,6 +97,7 @@ async def lifespan(app: FastAPI):
     app.state.camera_manager.start()
     app.state.orchestration_service.start_background_tasks()
 
+    # ... (rest of lifespan function and create_app are unchanged) ...
     async def broadcast_updates():
         while True:
             try:
@@ -133,7 +123,6 @@ async def lifespan(app: FastAPI):
     await app.state.redis_client.close()
     if 'broadcast_task' in app.state and app.state.broadcast_task:
         app.state.broadcast_task.cancel()
-    
     app.state.orchestration_service.stop_background_tasks()
     await app.state.modbus_poller.stop()
     app.state.notification_service.stop()

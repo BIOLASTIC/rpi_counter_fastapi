@@ -2,24 +2,21 @@
 
 """
 REVISED: The `capture_and_save_image` method is now more robust.
-- It now actively waits for up to 1 second for a new frame to arrive before
-  timing out.
-FIXED: Now receives the list of active cameras via dependency injection
-instead of relying on a global import.
+- It now actively waits for up to 1 second for a new frame to arrive.
+FIXED: The Redis listener is re-architected for better connection resilience,
+which is critical for the stability of the live camera stream.
 """
 import asyncio
 import time
 import redis.asyncio as redis
 from enum import Enum
-from typing import Optional, Dict, Set, List # Import List
+from typing import Optional, Dict, Set, List
 import cv2
 import numpy as np
 from pathlib import Path
 
 from redis import exceptions as redis_exceptions
 from app.services.notification_service import AsyncNotificationService
-# REMOVED: No longer importing global state from config
-# from config import ACTIVE_CAMERA_IDS
 
 class CameraHealthStatus(str, Enum):
     CONNECTED = "connected"
@@ -27,8 +24,6 @@ class CameraHealthStatus(str, Enum):
     ERROR = "error"
 
 class AsyncCameraManager:
-    # --- THIS IS THE FIX (PART 1) ---
-    # The constructor is updated to accept the active_camera_ids list.
     def __init__(
         self,
         notification_service: AsyncNotificationService,
@@ -39,9 +34,8 @@ class AsyncCameraManager:
         self.redis_client = redis_client
         self._notification_service = notification_service
         self._captures_dir_base = Path(captures_dir)
-        self._active_camera_ids = active_camera_ids # Store the list
+        self._active_camera_ids = active_camera_ids
         
-        # Initialize internal state based on the provided list
         self._listener_tasks: Dict[str, asyncio.Task] = {}
         self._health_status: Dict[str, CameraHealthStatus] = {cam_id: CameraHealthStatus.DISCONNECTED for cam_id in self._active_camera_ids}
         self._frame_queues: Dict[str, asyncio.Queue] = {cam_id: asyncio.Queue(maxsize=5) for cam_id in self._active_camera_ids}
@@ -50,7 +44,6 @@ class AsyncCameraManager:
         self._stream_lock = asyncio.Lock()
 
     def start(self):
-        # Now iterates over the instance variable
         for cam_id in self._active_camera_ids:
             if cam_id not in self._listener_tasks or self._listener_tasks[cam_id].done():
                 self._listener_tasks[cam_id] = asyncio.create_task(self._redis_listener(cam_id))
@@ -60,54 +53,80 @@ class AsyncCameraManager:
             if task and not task.done():
                 task.cancel()
 
+    # --- THIS IS THE FIX ---
+    # This listener logic is re-written to be more robust for a service that must
+    # run forever and survive Redis connection drops.
     async def _redis_listener(self, cam_id: str):
-        # ... (rest of the function is unchanged)
         channel_name = f"camera:frames:{cam_id}"
+        pubsub = self.redis_client.pubsub()
+
+        async def listen_for_messages():
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                if message:
+                    if self._health_status[cam_id] != CameraHealthStatus.CONNECTED:
+                        print(f"[Camera Manager] Re-established frame stream for '{cam_id}'.")
+                    self._health_status[cam_id] = CameraHealthStatus.CONNECTED
+                    frame_data = message['data']
+                    
+                    # Distribute frame to single-shot capture queue
+                    while not self._frame_queues[cam_id].empty():
+                        self._frame_queues[cam_id].get_nowait()
+                    self._frame_queues[cam_id].put_nowait(frame_data)
+                    
+                    # Distribute frame to all active stream listeners (e.g., dashboard clients)
+                    async with self._stream_lock:
+                        # Make a copy of the set to prevent issues if it's modified while iterating
+                        listeners = list(self._stream_listeners[cam_id])
+                    
+                    for queue in listeners:
+                        if not queue.full():
+                            try:
+                                queue.put_nowait(frame_data)
+                            except asyncio.QueueFull:
+                                pass # It's okay if a slow client misses a frame
+                else:
+                    # Timeout occurred
+                    if self._health_status.get(cam_id) == CameraHealthStatus.CONNECTED:
+                        await self._notification_service.send_alert("WARNING", f"Camera '{cam_id}' has stopped publishing frames.")
+                    self._health_status[cam_id] = CameraHealthStatus.DISCONNECTED
+        
+        # Main reconnection loop
         while True:
             try:
-                async with self.redis_client.pubsub() as pubsub:
-                    await pubsub.subscribe(channel_name)
-                    while True:
-                        message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                        if message:
-                            self._health_status[cam_id] = CameraHealthStatus.CONNECTED
-                            frame_data = message['data']
-                            while not self._frame_queues[cam_id].empty():
-                                self._frame_queues[cam_id].get_nowait()
-                            self._frame_queues[cam_id].put_nowait(frame_data)
-                            async with self._stream_lock:
-                                for queue in self._stream_listeners[cam_id]:
-                                    if not queue.full():
-                                        queue.put_nowait(frame_data)
-                        else:
-                            if self._health_status.get(cam_id) == CameraHealthStatus.CONNECTED:
-                                await self._notification_service.send_alert("WARNING", f"Camera '{cam_id}' has stopped publishing frames.")
-                            self._health_status[cam_id] = CameraHealthStatus.DISCONNECTED
+                await pubsub.subscribe(channel_name)
+                print(f"[Camera Manager] Subscribed to Redis channel: {channel_name}")
+                await listen_for_messages()
             except redis_exceptions.ConnectionError:
                 self._health_status[cam_id] = CameraHealthStatus.ERROR
-                await asyncio.sleep(10)
+                print(f"[Camera Manager] Redis connection lost for '{cam_id}'. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
             except asyncio.CancelledError:
+                print(f"[Camera Manager] Listener for '{cam_id}' cancelled.")
                 break
-            except Exception:
+            except Exception as e:
                 self._health_status[cam_id] = CameraHealthStatus.ERROR
+                print(f"[Camera Manager] Unexpected error in '{cam_id}' listener: {e}. Retrying in 10 seconds...")
                 await asyncio.sleep(10)
+        
+        # Cleanup
+        await pubsub.close()
     
-    # --- THIS IS THE FIX (PART 2) ---
-    # The check now uses the reliable instance variable `self._active_camera_ids`.
     async def start_stream(self, cam_id: str) -> Optional[asyncio.Queue]:
         if cam_id not in self._active_camera_ids:
-            print(f"DEBUG: start_stream rejected for '{cam_id}'. Active IDs: {self._active_camera_ids}")
             return None
         q = asyncio.Queue(maxsize=2)
         async with self._stream_lock:
             self._stream_listeners[cam_id].add(q)
+        print(f"[Camera Manager] New stream client connected for '{cam_id}'. Total listeners: {len(self._stream_listeners[cam_id])}")
         return q
 
     async def stop_stream(self, cam_id: str, queue: asyncio.Queue):
         if cam_id not in self._active_camera_ids: return
         async with self._stream_lock:
             self._stream_listeners[cam_id].discard(queue)
-
+        print(f"[Camera Manager] Stream client disconnected for '{cam_id}'. Remaining listeners: {len(self._stream_listeners[cam_id])}")
+        
     # ... (rest of the file is unchanged)
     async def capture_and_save_image(self, cam_id: str, filename_prefix: str) -> Optional[str]:
         if self._health_status.get(cam_id) != CameraHealthStatus.CONNECTED: return None
