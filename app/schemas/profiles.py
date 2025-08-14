@@ -7,9 +7,7 @@ profile management API endpoints.
 """
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
-# --- THIS IMPORT WILL NOW WORK ---
 from .products import ProductOut
-# ---------------------------------
 
 # --- CameraProfile Schemas ---
 
@@ -33,6 +31,9 @@ class CameraProfileUpdate(BaseModel):
     white_balance_temp: Optional[int] = None
     brightness: Optional[int] = None
     autofocus: Optional[bool] = None
+    
+    # This line fixes the 500 Internal Server Error
+    description: Optional[str] = None
 
 class CameraProfileOut(CameraProfileBase):
     model_config = ConfigDict(from_attributes=True)
