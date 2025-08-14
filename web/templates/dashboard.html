@@ -1,7 +1,9 @@
+<!-- rpi_counter_fastapi-dev2/web/templates/dashboard.html -->
+
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.1"> <!-- Version bumped for cache-busting -->
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.2"> <!-- Version bumped for cache-busting -->
 
 <div class="dashboard-container">
 
@@ -15,7 +17,7 @@
         <button class="btn btn-warning" id="acknowledge-alarm-btn">Acknowledge</button>
     </div>
 
-    <!-- Live Process View Card with Animation (No changes) -->
+    <!-- Live Process View Card (No changes) -->
     <div class="grid-card animation-card">
         <h3 class="card-title"><i class="bi bi-truck-front"></i> Live Process View</h3>
         <div id="animation-zone" data-animation-time="{{ animation_time }}">
@@ -28,7 +30,7 @@
         </div>
     </div>
 
-    <!-- Run Status Section (No changes) -->
+    <!-- Run Status Section (MODIFIED) -->
     <div class="grid-card run-status-card">
         <h3 class="card-title" style="justify-content: center;"><i class="bi bi-stack"></i> Run Status</h3>
         <div class="progress-container">
@@ -38,9 +40,27 @@
             </svg>
             <div class="progress-text"><div id="progress-percentage">0%</div><div id="progress-details">0 / ∞</div></div>
         </div>
-        <div class="status-line"><strong>Active Profile:</strong> <span class="badge" id="active-profile-display">None</span></div>
+        
+        <!-- --- THIS IS THE NEW FEATURE --- -->
+        <div id="run-details-container" class="mt-3">
+            <div class="run-detail-item">
+                <span class="run-detail-label">Recipe:</span>
+                <span class="badge" id="active-profile-display">None</span>
+            </div>
+            <div class="run-detail-item">
+                <span class="run-detail-label">Batch:</span>
+                <span class="run-detail-value" id="run-detail-batch">N/A</span>
+            </div>
+            <div class="run-detail-item">
+                <span class="run-detail-label">Operator:</span>
+                <span class="run-detail-value" id="run-detail-operator">N/A</span>
+            </div>
+        </div>
+        <!-- --- END OF NEW FEATURE --- -->
+
     </div>
     
+    <!-- Live Camera Feeds Card (No changes) -->
    <div class="grid-card feeds-card">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h3 class="card-title mb-0"><i class="bi bi-camera-video"></i> Live Camera Feeds</h3>
@@ -50,14 +70,11 @@
                 {% endfor %}
             </div>
         </div>
-        <!-- The grid now has two columns -->
         <div class="feeds-grid">
-            <!-- Left Container: Live Feed -->
             <div class="camera-feed-container">
                 <div class="camera-title-overlay" id="live-feed-title">LIVE CAMERA</div>
                 <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live camera feed">
             </div>
-            <!-- Right Container: Static Placeholder -->
             <div class="camera-feed-container">
                 <div class="camera-title-overlay">AI FEED (Placeholder)</div>
                 <img src="/static/images/placeholder.jpg" alt="Placeholder feed">
@@ -65,7 +82,7 @@
         </div>
     </div>
 
-    <!-- Main Control Section with RESTORED Post-Batch Delay Input -->
+    <!-- Control Section (No changes) -->
     <div class="grid-card control-card">
         <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
         <div class="control-grid-main">
@@ -85,7 +102,6 @@
                     <label for="target-count-input">Target Count (0 for ∞)</label>
                     <input type="number" class="form-control" id="target-count-input" value="10" min="0">
                 </div>
-                 <!-- FEATURE RESTORED: Post-Batch Delay Input -->
                  <div class="form-group" style="margin-top: 1rem;">
                     <label for="post-batch-delay-input">Post-Run Pause (s)</label>
                     <input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0">
@@ -102,7 +118,7 @@
         </div>
     </div>
 
-    <!-- FEATURE RESTORED: System Status & Manual Control Section -->
+    <!-- System Control Panel (No changes) -->
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
@@ -154,5 +170,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=2.1"></script>
+<script src="/static/js/dashboard_v3.js?v=2.2"></script>
 {% endblock %}

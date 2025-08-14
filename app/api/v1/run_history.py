@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-dev2/app/api/v1/run_history.py
+
 import io
 import zipfile
 from pathlib import Path
@@ -8,6 +10,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func
+import asyncio
 
 from app.models import get_async_session, RunLog, DetectionEventLog
 from app.schemas.run_log import RunLogOut, DetectionEventLogOut
@@ -29,14 +33,25 @@ async def get_run_history(
     offset: int = Query(0, ge=0)
 ):
     """
-    Retrieve historical run logs with filtering and pagination.
+    Retrieve historical run logs with detailed, aggregated data for reporting.
     """
+    # Base query now efficiently counts detection events at the database level
+    # to prevent loading all events into memory, which is crucial for performance.
     query = (
-        select(RunLog)
-        .options(selectinload(RunLog.operator), selectinload(RunLog.product))
+        select(
+            RunLog,
+            func.count(DetectionEventLog.id).label("detection_count")
+        )
+        .outerjoin(DetectionEventLog, RunLog.id == DetectionEventLog.run_log_id)
+        .options(
+            selectinload(RunLog.operator), 
+            selectinload(RunLog.product)
+        )
+        .group_by(RunLog.id) # Group by the RunLog to count events per run
         .order_by(RunLog.start_timestamp.desc())
     )
 
+    # Apply filters based on query parameters
     if start_date:
         query = query.where(RunLog.start_timestamp >= start_date)
     if end_date:
@@ -51,7 +66,24 @@ async def get_run_history(
     query = query.offset(offset).limit(limit)
     
     result = await db.execute(query)
-    return result.scalars().all()
+    
+    # Manually construct the detailed response objects to include calculated fields
+    detailed_runs = []
+    for run_log, detection_count in result.all():
+        duration = None
+        if run_log.start_timestamp and run_log.end_timestamp:
+            duration = int((run_log.end_timestamp - run_log.start_timestamp).total_seconds())
+
+        # Use the Pydantic model to validate and structure the base data from the ORM object
+        run_out = RunLogOut.model_validate(run_log)
+        
+        # Add the newly calculated/aggregated fields to the response object
+        run_out.detected_items_count = detection_count
+        run_out.duration_seconds = duration
+        
+        detailed_runs.append(run_out)
+        
+    return detailed_runs
 
 @router.get("/{run_id}/detections", response_model=List[DetectionEventLogOut])
 async def get_run_detection_events(
@@ -73,6 +105,7 @@ def create_zip_from_paths_sync(image_web_paths: List[str]) -> io.BytesIO:
     files_to_zip = []
     for web_path in image_web_paths:
         if not web_path: continue
+        # Convert web path (/captures/cam_id/file.jpg) to a full system path
         relative_path = web_path.lstrip('/').lstrip('captures').lstrip('/')
         full_path = captures_base_dir / relative_path
         if full_path.exists():
@@ -84,6 +117,7 @@ def create_zip_from_paths_sync(image_web_paths: List[str]) -> io.BytesIO:
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for file_path in files_to_zip:
+            # Add file to zip using its name, not the full path
             zipf.write(file_path, arcname=file_path.name)
     
     zip_buffer.seek(0)
@@ -99,6 +133,7 @@ async def download_run_images_zip(
     if not run_log:
         raise HTTPException(status_code=404, detail="Run not found.")
 
+    # Get all image paths associated with this run
     result = await db.execute(
         select(DetectionEventLog.image_path)
         .where(DetectionEventLog.run_log_id == run_id)
@@ -107,7 +142,8 @@ async def download_run_images_zip(
 
     if not any(image_paths):
         raise HTTPException(status_code=404, detail="No images were logged for this run.")
-
+    
+    # Run the blocking ZIP creation in a separate thread to avoid blocking the server
     zip_buffer = await asyncio.to_thread(create_zip_from_paths_sync, image_paths)
     
     if not zip_buffer.getbuffer().nbytes > 0:

@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const objectProfileModal = new bootstrap.Modal(document.getElementById('object-profile-modal'));
     const objectForm = document.getElementById('object-profile-form');
     
-    // --- NEW: Live Preview Elements ---
     const previewSelect = document.getElementById('camera-preview-select');
     const previewImage = document.getElementById('camera-preview-feed');
     const liveUpdateInputs = document.querySelectorAll('#camera-profile-form .live-update');
@@ -38,7 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- NEW: Function to send preview settings ---
     const sendPreviewSettings = async () => {
         const cameraId = previewSelect.value;
         if (!cameraId) return;
@@ -47,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
             exposure: parseInt(document.getElementById('camera-profile-exposure').value, 10),
             gain: parseInt(document.getElementById('camera-profile-gain').value, 10),
             brightness: parseInt(document.getElementById('camera-profile-brightness').value, 10),
-            white_balance_temp: parseInt(document.getElementById('camera-profile-wb').value, 10),
+            white_balance_temp: parseInt(document.getElementById('camera-profile-white-balance-temp').value, 10),
             autofocus: document.getElementById('camera-profile-autofocus').checked,
         };
         
@@ -125,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('camera-modal-title').textContent = 'Edit Camera Profile';
             cameraForm.reset();
             Object.keys(profile).forEach(key => {
+                // This logic now correctly finds the 'white-balance-temp' input
                 const input = document.getElementById(`camera-profile-${key.replace(/_/g, '-')}`);
                 if (input) {
                     if (input.type === 'checkbox') input.checked = profile[key];
@@ -147,7 +146,10 @@ document.addEventListener('DOMContentLoaded', () => {
             name: document.getElementById('camera-profile-name').value,
             exposure: parseInt(document.getElementById('camera-profile-exposure').value),
             gain: parseInt(document.getElementById('camera-profile-gain').value),
-            white_balance_temp: parseInt(document.getElementById('camera-profile-wb').value),
+            // --- THIS IS THE FIX ---
+            // It now reads from the corrected ID 'camera-profile-white-balance-temp'
+            white_balance_temp: parseInt(document.getElementById('camera-profile-white-balance-temp').value),
+            // --- END OF FIX ---
             brightness: parseInt(document.getElementById('camera-profile-brightness').value),
             autofocus: document.getElementById('camera-profile-autofocus').checked,
             description: document.getElementById('camera-profile-desc').value,
@@ -163,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // --- Object Profile Handlers ---
+    // --- Object Profile Handlers (Unchanged) ---
     const populateObjectModalDropdowns = () => {
         const camSelect = document.getElementById('object-camera-profile-select');
         const prodSelect = document.getElementById('object-product-select');
@@ -224,6 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Error: ${errData.detail || 'Failed to save recipe'}`);
         }
     });
+
+    // --- Live Preview Logic (Uncha
 
     // --- NEW: Live Preview Logic ---
     const updatePreviewImageSource = () => {

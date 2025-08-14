@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-dev2/app/schemas/profiles.py
+
 """
 NEW: Pydantic schemas for API data validation and serialization
 for the CameraProfile and ObjectProfile models.
@@ -28,18 +30,21 @@ class CameraProfileUpdate(BaseModel):
     name: Optional[str] = None
     exposure: Optional[int] = None
     gain: Optional[int] = None
+    
+    # --- THIS IS THE FIX ---
+    # The missing field is now added, allowing updates to be processed correctly.
     white_balance_temp: Optional[int] = None
+    # --- END OF FIX ---
+    
     brightness: Optional[int] = None
     autofocus: Optional[bool] = None
-    
-    # This line fixes the 500 Internal Server Error
     description: Optional[str] = None
 
 class CameraProfileOut(CameraProfileBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
 
-# --- ObjectProfile Schemas ---
+# --- ObjectProfile Schemas (Unchanged) ---
 
 class ObjectProfileBase(BaseModel):
     name: str
@@ -56,7 +61,7 @@ class ObjectProfileUpdate(BaseModel):
     camera_profile_id: Optional[int] = None
     sort_offset_ms: Optional[int] = None
     product_id: Optional[int] = None
-
+    description: Optional[str] = None
 
 class ObjectProfileOut(ObjectProfileBase):
     model_config = ConfigDict(from_attributes=True)

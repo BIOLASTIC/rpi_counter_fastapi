@@ -1,3 +1,5 @@
+<!-- rpi_counter_fastapi-dev2/web/templates/products.html -->
+
 {% extends "base.html" %}
 
 {% block content %}
@@ -19,6 +21,8 @@
                     <thead>
                         <tr>
                             <th>Name</th>
+                            <th>Category</th>
+                            <th>Size</th>
                             <th>Status</th>
                             <th>Version</th>
                             <th>Description</th>
@@ -28,7 +32,7 @@
                     </thead>
                     <tbody id="products-table-body">
                         <!-- JS will populate this -->
-                        <tr><td colspan="6" class="text-center">Loading products...</td></tr>
+                        <tr><td colspan="8" class="text-center">Loading products...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -48,15 +52,29 @@
                 <form id="product-form">
                     <input type="hidden" id="product-id">
                     <div class="row">
-                        <div class="col-md-8 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label for="product-name" class="form-label">Product Name*</label>
                             <input type="text" class="form-control" id="product-name" required>
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                              <label for="product-version" class="form-label">Version</label>
                             <input type="text" class="form-control" id="product-version">
                         </div>
                     </div>
+                    
+                    <!-- NEW FORM FIELDS -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="product-category" class="form-label">Product Category</label>
+                            <input type="text" class="form-control" id="product-category" placeholder="e.g., Electronics, Apparel">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                             <label for="product-size" class="form-label">Product Size</label>
+                            <input type="text" class="form-control" id="product-size" placeholder="e.g., Small, 12oz, 24x18x12">
+                        </div>
+                    </div>
+                    <!-- END NEW FORM FIELDS -->
+
                     <div class="mb-3">
                         <label for="product-description" class="form-label">Description</label>
                         <textarea class="form-control" id="product-description" rows="2"></textarea>

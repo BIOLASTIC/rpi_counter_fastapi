@@ -1,8 +1,10 @@
+<!-- rpi_counter_fastapi-dev2/web/templates/run_history.html -->
+
 {% extends "base.html" %}
 
 {% block content %}
 <div class="container-fluid">
-    <h1 class="mb-4">Run History</h1>
+    <h1 class="mb-4">Run History Report</h1>
     
     <div class="card">
         <div class="card-header">
@@ -21,19 +23,21 @@
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover small">
+                    <!-- MODIFIED: Added new columns for the detailed report -->
                     <thead>
                         <tr>
                             <th>Start Time (UTC)</th>
                             <th>Status</th>
+                            <th>Duration</th>
                             <th>Batch Code</th>
                             <th>Product</th>
                             <th>Operator</th>
-                            <th>Recipe Used</th>
+                            <th class="text-end">Detected / Target</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
-                        <tr><td colspan="7" class="text-center">Loading run history...</td></tr>
+                        <tr><td colspan="8" class="text-center">Loading run history...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -42,7 +46,7 @@
     </div>
 </div>
 
-<!-- Modal for showing detection events -->
+<!-- Modal for showing detection events (No changes here) -->
 <div class="modal fade" id="detections-modal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -67,5 +71,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/run_history.js?v=1.1"></script>
+<script src="/static/js/run_history.js?v=1.2"></script> <!-- Version bumped -->
 {% endblock %}

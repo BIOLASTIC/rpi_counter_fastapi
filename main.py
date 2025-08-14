@@ -1,12 +1,7 @@
+# rpi_counter_fastapi-dev2/main.py
+
 """
 The main application entry point.
-
-REVISED: All AI-related service initialization and Redis state management
-has been removed to create a non-AI version of the application.
-
-DEFINITIVE FIX: The broadcast loop now combines system and orchestration status
-into a single message before sending. This prevents client-side JSON parsing
-errors caused by receiving multiple messages in a single network packet.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -53,12 +48,10 @@ class NoCacheStaticFiles(StaticFiles):
 async def lifespan(app: FastAPI):
     print(f"--- Application starting up in {settings.APP_ENV} mode... ---")
 
-    # Initialize database
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
 
-    # Initialize Redis client
     app.state.redis_client = redis.from_url("redis://localhost", decode_responses=True)
 
     # Initialize all application services
@@ -70,19 +63,27 @@ async def lifespan(app: FastAPI):
         app_settings=settings
     )
     app.state.notification_service = AsyncNotificationService(db_session_factory=AsyncSessionFactory)
+    
+    # --- THIS IS THE FIX (PART 1) ---
+    # We now pass the ACTIVE_CAMERA_IDS list into the service constructor.
     app.state.camera_manager = AsyncCameraManager(
         notification_service=app.state.notification_service,
-        captures_dir=settings.CAMERA_CAPTURES_DIR
+        captures_dir=settings.CAMERA_CAPTURES_DIR,
+        redis_client=app.state.redis_client,
+        active_camera_ids=ACTIVE_CAMERA_IDS
     )
     
-    # MODIFIED: Pass the db session factory back in, as it's now required
+    # --- THIS IS THE FIX (PART 2) ---
+    # We do the same for the detection service.
     app.state.detection_service = AsyncDetectionService(
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
         orchestration_service=app.state.orchestration_service,
         conveyor_settings=settings.CONVEYOR,
-        db_session_factory=AsyncSessionFactory # This is now correct
+        db_session_factory=AsyncSessionFactory,
+        active_camera_ids=ACTIVE_CAMERA_IDS
     )
+    # --- END OF FIX ---
 
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
@@ -105,21 +106,15 @@ async def lifespan(app: FastAPI):
     app.state.notification_service.start()
     app.state.modbus_poller.start()
     app.state.camera_manager.start()
+    app.state.orchestration_service.start_background_tasks()
 
-    # The broadcast loop for sending status updates to the UI
     async def broadcast_updates():
         while True:
             try:
                 system_status = await app.state.system_service.get_system_status()
                 orchestration_status = app.state.orchestration_service.get_status()
-
-                full_status_payload = {
-                    "system": system_status,
-                    "orchestration": orchestration_status
-                }
-
+                full_status_payload = { "system": system_status, "orchestration": orchestration_status }
                 await websocket_manager.broadcast_json({"type": "full_status", "data": full_status_payload})
-                
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:
                 break
@@ -138,6 +133,8 @@ async def lifespan(app: FastAPI):
     await app.state.redis_client.close()
     if 'broadcast_task' in app.state and app.state.broadcast_task:
         app.state.broadcast_task.cancel()
+    
+    app.state.orchestration_service.stop_background_tasks()
     await app.state.modbus_poller.stop()
     app.state.notification_service.stop()
     await app.state.camera_manager.stop()
@@ -147,20 +144,15 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME, version=settings.PROJECT_VERSION, lifespan=lifespan)
-    
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-    
     app.mount("/static", NoCacheStaticFiles(directory=PROJECT_ROOT / "web/static"), name="static")
     app.mount("/captures", NoCacheStaticFiles(directory=PROJECT_ROOT / settings.CAMERA_CAPTURES_DIR), name="captures")
-    
     app.include_router(api_v1_router, prefix="/api/v1")
     app.include_router(web_router)
     app.include_router(websocket_router)
-    
     if settings.APP_ENV == "development":
         app.include_router(debug_router.router, prefix="/api/v1/debug", tags=["Debug"])
-        
     app.state.templates = Jinja2Templates(directory=str(PROJECT_ROOT / "web/templates"))
     return app
 
