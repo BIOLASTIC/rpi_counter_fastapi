@@ -23,7 +23,6 @@
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover small">
-                    <!-- MODIFIED: Added new columns for the detailed report -->
                     <thead>
                         <tr>
                             <th>Start Time (UTC)</th>
@@ -41,12 +40,11 @@
                     </tbody>
                 </table>
             </div>
-            <!-- Pagination can be added here later -->
         </div>
     </div>
 </div>
 
-<!-- Modal for showing detection events (No changes here) -->
+<!-- Modal for showing detection events -->
 <div class="modal fade" id="detections-modal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -58,10 +56,10 @@
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <p id="detections-modal-subtitle" class="text-muted mb-0">Images captured during the selected run.</p>
                     <a href="#" id="download-run-zip-btn" class="btn btn-success" download>
-                        <i class="bi bi-file-earmark-zip-fill me-2"></i>Download All as ZIP
+                        <i class="bi bi-file-earmark-zip-fill me-2"></i>Download Original Images as ZIP
                     </a>
                 </div>
-                <div id="detections-modal-body-content" class="bg-light p-3 rounded">
+                <div id="detections-grid-container" class="bg-light p-3 rounded">
                     <!-- JS will populate this -->
                 </div>
             </div>
@@ -71,5 +69,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/run_history.js?v=1.2"></script> <!-- Version bumped -->
+<script src="/static/js/run_history.js?v=1.3"></script>
 {% endblock %}

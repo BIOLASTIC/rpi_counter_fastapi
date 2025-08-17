@@ -1,0 +1,91 @@
+<!-- web/templates/qc_testing.html -->
+
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .result-container {
+        position: relative;
+        max-width: 100%;
+        background-color: #eee;
+    }
+    #result-canvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+</style>
+
+<div class="container">
+    <h1 class="mb-4">AI QC System - Manual Test</h1>
+    <p class="text-muted">This page allows you to directly test the dynamic QC API by uploading an image and selecting the checks to perform.</p>
+
+    <div class="row g-4">
+        <!-- Controls Column -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Test Parameters</h5>
+                    <form id="qc-test-form">
+                        <div class="mb-3">
+                            <label for="image-upload" class="form-label">1. Upload Image*</label>
+                            <input class="form-control" type="file" id="image-upload" accept="image/jpeg,image/png" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">2. Select Checks to Perform*</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="product_category" id="check-category">
+                                <label class="form-check-label" for="check-category">Product Category</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="size" id="check-size">
+                                <label class="form-check-label" for="check-size">Size</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="defects" id="check-defects">
+                                <label class="form-check-label" for="check-defects">Defects</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="ticks" id="check-ticks">
+                                <label class="form-check-label" for="check-ticks">Ticks</label>
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" id="submit-btn">
+                                <span id="submit-spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Run Inspection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Column -->
+        <div class="col-lg-8">
+            <div id="results-area" style="display: none;">
+                <div class="card mb-4">
+                    <div class="card-header">Annotated Result</div>
+                    <div class="card-body result-container">
+                        <canvas id="result-canvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">Raw API Response (JSON)</div>
+                    <div class="card-body">
+                        <pre><code id="json-response" style="max-height: 400px; overflow-y: auto; display: block;"></code></pre>
+                    </div>
+                </div>
+            </div>
+            <div id="error-alert" class="alert alert-danger" role="alert" style="display: none;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/qc_testing.js"></script>
+{% endblock %}

@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-dev2/app/web/router.py
+
 """
 Web routes for serving HTML pages.
 """
@@ -6,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pathlib import Path
-import markdown2 # <-- NEW: Import the markdown library
+import markdown2 
 
 from app.models import get_async_session, EventLog, ObjectProfile
 from config import settings, ACTIVE_CAMERA_IDS
@@ -25,9 +27,6 @@ def NoCacheTemplateResponse(request: Request, name: str, context: dict):
         "Expires": "0"
     }
     return templates.TemplateResponse(name, context, headers=headers)
-
-# ... (all existing routes like @router.get("/"), @router.get("/management/recipes"), etc.)
-# ... (They are unchanged, so I am omitting them for brevity)
 
 @router.get("/", response_class=HTMLResponse)
 async def read_dashboard(request: Request, db: AsyncSession = Depends(get_async_session)):
@@ -60,7 +59,13 @@ async def read_hardware_page(request: Request):
 async def read_run_history_page(request: Request):
     return NoCacheTemplateResponse(request, "run_history.html", {"request": request})
 
-# --- THIS IS THE NEW FEATURE ---
+# --- NEW ROUTE FOR QC TESTING PAGE ---
+@router.get("/qc-testing", response_class=HTMLResponse)
+async def read_qc_testing_page(request: Request):
+    """Serves the manual QC API testing page."""
+    return NoCacheTemplateResponse(request, "qc_testing.html", {"request": request})
+# --- END NEW ROUTE ---
+
 @router.get("/help/{page_name}", response_class=HTMLResponse)
 async def read_help_page(request: Request, page_name: str):
     """
@@ -87,10 +92,7 @@ async def read_help_page(request: Request, page_name: str):
     
     context = {"request": request, "title": title, "content": html_content}
     return NoCacheTemplateResponse(request, "help.html", context)
-# --- END OF NEW FEATURE ---
 
-# ... (all other existing routes like camera views, logs, etc.)
-# ... (They are also unchanged)
 @router.get("/connections", response_class=HTMLResponse)
 async def read_connections_page(request: Request):
     return NoCacheTemplateResponse(request, "connections.html", {"request": request, "config": settings})

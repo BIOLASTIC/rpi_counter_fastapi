@@ -1,132 +1,150 @@
 // rpi_counter_fastapi-dev2/web/static/js/products.js
 
-// API Helper
-const api = {
-    get: (url) => fetch(`/api/v1${url}`).then(res => res.ok ? res.json() : Promise.reject(res)),
-    post: (url, data) => fetch(`/api/v1${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(res => res.ok ? res.json() : Promise.reject(res)),
-    put: (url, data) => fetch(`/api/v1${url}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(res => res.ok ? res.json() : Promise.reject(res)),
-    del: (url) => fetch(`/api/v1${url}`, { method: 'DELETE' }).then(res => res.ok || Promise.reject(res)),
-};
-
-document.addEventListener('DOMContentLoaded', () => {
-    // --- Elements ---
-    const tableBody = document.getElementById('products-table-body');
-    const modalEl = document.getElementById('product-modal');
-    const productModal = new bootstrap.Modal(modalEl);
+document.addEventListener('DOMContentLoaded', function() {
+    const addProductBtn = document.getElementById('add-product-btn');
+    const productModal = new bootstrap.Modal(document.getElementById('product-modal'));
     const productForm = document.getElementById('product-form');
     const modalTitle = document.getElementById('product-modal-title');
-    const addProductBtn = document.getElementById('add-product-btn');
+    const tableBody = document.getElementById('products-table-body');
+    let editingProductId = null;
 
-    // --- State ---
-    let products = [];
+    const fetchProducts = async () => {
+        try {
+            const response = await fetch('/api/v1/products/');
+            if (!response.ok) throw new Error('Failed to fetch products');
+            const products = await response.json();
+            renderTable(products);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Failed to load products.</td></tr>';
+        }
+    };
 
-    // --- Render Function ---
-    const renderProducts = () => {
-        if (!tableBody) return;
+    const renderTable = (products) => {
+        tableBody.innerHTML = '';
         if (products.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No products found.</td></tr>';
             return;
         }
-        tableBody.innerHTML = products.map(p => `
-            <tr>
+        products.forEach(p => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
                 <td>${p.name}</td>
-                <td>${p.category || '<i class="text-muted">N/A</i>'}</td>
-                <td>${p.size || '<i class="text-muted">N/A</i>'}</td>
+                <td>${p.category || ''}</td>
+                <td>${p.size || ''}</td>
                 <td><span class="badge ${p.status === 'Active' ? 'bg-success' : 'bg-secondary'}">${p.status}</span></td>
                 <td>${p.version}</td>
                 <td>${p.description || ''}</td>
-                <td>${p.min_sensor_block_time_ms || ''} / ${p.max_sensor_block_time_ms || ''}</td>
+                <td>${p.min_sensor_block_time_ms || 'N/A'} / ${p.max_sensor_block_time_ms || 'N/A'}</td>
                 <td class="text-end">
-                    <button class="btn btn-sm btn-outline-primary edit-btn" data-id="${p.id}"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${p.id}"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-primary edit-btn" data-id="${p.id}"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${p.id}"><i class="bi bi-trash-fill"></i></button>
                 </td>
-            </tr>
-        `).join('');
+            `;
+            tableBody.appendChild(row);
+        });
     };
 
-    // --- Data Loading ---
-    const loadProducts = async () => {
+    const openModalForEdit = async (id) => {
+        editingProductId = id;
+        modalTitle.textContent = 'Edit Product';
         try {
-            products = await api.get('/products/');
-            renderProducts();
+            const response = await fetch(`/api/v1/products/${id}`);
+            if (!response.ok) throw new Error('Failed to fetch product details');
+            const product = await response.json();
+            document.getElementById('product-id').value = product.id;
+            document.getElementById('product-name').value = product.name;
+            document.getElementById('product-version').value = product.version;
+            document.getElementById('product-category').value = product.category || '';
+            document.getElementById('product-size').value = product.size || '';
+            document.getElementById('product-description').value = product.description || '';
+            document.getElementById('product-status').value = product.status;
+            document.getElementById('product-ai-model').value = product.ai_model_path || '';
+            document.getElementById('product-min-block-time').value = product.min_sensor_block_time_ms || '';
+            document.getElementById('product-max-block-time').value = product.max_sensor_block_time_ms || '';
+            document.getElementById('verify-category').checked = product.verify_category;
+            document.getElementById('verify-size').checked = product.verify_size;
+            document.getElementById('verify-defects').checked = product.verify_defects;
+            document.getElementById('verify-ticks').checked = product.verify_ticks;
+            productModal.show();
         } catch (error) {
-            console.error('Failed to load products:', error);
-            if (tableBody) tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Error loading products.</td></tr>';
-        }
-    };
-
-    // --- Event Handlers ---
-    const handleEditClick = (id) => {
-        const product = products.find(p => p.id == id);
-        if (!product) return;
-
-        modalTitle.textContent = `Edit Product: ${product.name}`;
-        productForm.reset();
-        document.getElementById('product-id').value = product.id;
-        document.getElementById('product-name').value = product.name;
-        document.getElementById('product-version').value = product.version;
-        document.getElementById('product-category').value = product.category || '';
-        document.getElementById('product-size').value = product.size || '';
-        document.getElementById('product-description').value = product.description || '';
-        document.getElementById('product-status').value = product.status;
-        document.getElementById('product-ai-model').value = product.ai_model_path || '';
-        document.getElementById('product-min-block-time').value = product.min_sensor_block_time_ms || '';
-        document.getElementById('product-max-block-time').value = product.max_sensor_block_time_ms || '';
-        productModal.show();
-    };
-
-    const handleDeleteClick = async (id) => {
-        if (!confirm('Are you sure you want to delete this product? It cannot be undone.')) return;
-
-        try {
-            await api.del(`/products/${id}`);
-            loadProducts();
-        } catch (error) {
-            const errData = await error.json().catch(() => ({ detail: 'Could not delete product. It may be in use by an Object Profile.' }));
-            alert(`Error: ${errData.detail}`);
+            console.error('Error preparing edit modal:', error);
+            alert('Could not load product data.');
         }
     };
 
     addProductBtn.addEventListener('click', () => {
+        editingProductId = null;
         modalTitle.textContent = 'Add New Product';
         productForm.reset();
         document.getElementById('product-id').value = '';
         productModal.show();
     });
 
-    tableBody.addEventListener('click', e => {
+    tableBody.addEventListener('click', (e) => {
         const editBtn = e.target.closest('.edit-btn');
         const deleteBtn = e.target.closest('.delete-btn');
-        if (editBtn) handleEditClick(editBtn.dataset.id);
-        if (deleteBtn) handleDeleteClick(deleteBtn.dataset.id);
+        if (editBtn) {
+            openModalForEdit(editBtn.dataset.id);
+        } else if (deleteBtn) {
+            if (confirm('Are you sure you want to delete this product?')) {
+                deleteProduct(deleteBtn.dataset.id);
+            }
+        }
     });
 
     productForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const id = document.getElementById('product-id').value;
-        const data = {
+        const payload = {
             name: document.getElementById('product-name').value,
             version: document.getElementById('product-version').value,
-            category: document.getElementById('product-category').value || null,
-            size: document.getElementById('product-size').value || null,
-            description: document.getElementById('product-description').value || null,
+            category: document.getElementById('product-category').value,
+            size: document.getElementById('product-size').value,
+            description: document.getElementById('product-description').value,
             status: document.getElementById('product-status').value,
-            ai_model_path: document.getElementById('product-ai-model').value || null,
-            min_sensor_block_time_ms: document.getElementById('product-min-block-time').value ? parseInt(document.getElementById('product-min-block-time').value) : null,
-            max_sensor_block_time_ms: document.getElementById('product-max-block-time').value ? parseInt(document.getElementById('product-max-block-time').value) : null,
+            ai_model_path: document.getElementById('product-ai-model').value,
+            min_sensor_block_time_ms: document.getElementById('product-min-block-time').value || null,
+            max_sensor_block_time_ms: document.getElementById('product-max-block-time').value || null,
+            verify_category: document.getElementById('verify-category').checked,
+            verify_size: document.getElementById('verify-size').checked,
+            verify_defects: document.getElementById('verify-defects').checked,
+            verify_ticks: document.getElementById('verify-ticks').checked
         };
 
+        const url = editingProductId ? `/api/v1/products/${editingProductId}` : '/api/v1/products/';
+        const method = editingProductId ? 'PUT' : 'POST';
+
         try {
-            const promise = id ? api.put(`/products/${id}`, data) : api.post('/products/', data);
-            await promise;
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to save product');
+            }
             productModal.hide();
-            loadProducts();
+            fetchProducts();
         } catch (error) {
-            const errData = await error.json().catch(() => ({ detail: 'An unknown error occurred.' }));
-            alert(`Error: ${errData.detail}`);
+            console.error('Error saving product:', error);
+            alert(`Error: ${error.message}`);
         }
     });
 
-    // --- Initial Load ---
-    loadProducts();
+    const deleteProduct = async (id) => {
+        try {
+            const response = await fetch(`/api/v1/products/${id}`, { method: 'DELETE' });
+            if (!response.ok) {
+                 const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to delete product');
+            }
+            fetchProducts();
+        } catch (error) {
+            console.error('Error deleting product:', error);
+            alert(`Error: ${error.message}`);
+        }
+    };
+
+    fetchProducts();
 });

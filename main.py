@@ -1,6 +1,5 @@
 # rpi_counter_fastapi-dev2/main.py
 
-# ... (imports are the same)
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,7 +27,6 @@ from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
 from app.websocket.connection_manager import manager as websocket_manager
 
-# ... (NoCacheStaticFiles class is the same)
 class NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> Response:
         response = await super().get_response(path, scope)
@@ -44,14 +42,9 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
+    
+    app.state.redis_client = redis.from_url("redis://localhost")
 
-    # --- THIS IS THE FIX ---
-    # `decode_responses` is set to False. The client will now handle raw bytes,
-    # preventing the UnicodeDecodeError with image data.
-    app.state.redis_client = redis.from_url("redis://localhost", decode_responses=False)
-    # --- END OF FIX ---
-
-    # Initialize all application services
     app.state.modbus_controller = await AsyncModbusController.get_instance()
     app.state.orchestration_service = AsyncOrchestrationService(
         modbus_controller=app.state.modbus_controller,
@@ -70,6 +63,7 @@ async def lifespan(app: FastAPI):
         modbus_controller=app.state.modbus_controller,
         camera_manager=app.state.camera_manager,
         orchestration_service=app.state.orchestration_service,
+        redis_client=app.state.redis_client,
         conveyor_settings=settings.CONVEYOR,
         db_session_factory=AsyncSessionFactory,
         active_camera_ids=ACTIVE_CAMERA_IDS
@@ -91,13 +85,11 @@ async def lifespan(app: FastAPI):
     await app.state.orchestration_service.initialize_hardware_state()
     app.state.active_camera_ids = ACTIVE_CAMERA_IDS
 
-    # Start all background tasks
     app.state.notification_service.start()
     app.state.modbus_poller.start()
     app.state.camera_manager.start()
     app.state.orchestration_service.start_background_tasks()
 
-    # ... (rest of lifespan function and create_app are unchanged) ...
     async def broadcast_updates():
         while True:
             try:
@@ -112,22 +104,42 @@ async def lifespan(app: FastAPI):
                 print(f"Error in broadcast loop: {e}")
                 await asyncio.sleep(5)
 
+    async def qc_image_broadcaster():
+        pubsub = app.state.redis_client.pubsub()
+        await pubsub.subscribe("qc_annotated_image:new")
+        print("QC Image Broadcaster: Subscribed to Redis channel.")
+        while True:
+            try:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
+                if message and message.get("type") == "message":
+                    image_path = message['data'].decode('utf-8')
+                    payload = {"type": "qc_update", "data": {"image_path": image_path}}
+                    await websocket_manager.broadcast_json(payload)
+                    print(f"QC Image Broadcaster: Sent new image path to UI: {image_path}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in QC Image Broadcaster loop: {e}")
+                await asyncio.sleep(5)
+    
     app.state.broadcast_task = asyncio.create_task(broadcast_updates())
+    app.state.qc_broadcast_task = asyncio.create_task(qc_image_broadcaster())
+    
     await app.state.notification_service.send_alert("INFO", "Application startup complete.")
     print("--- Application startup complete. Server is online. ---")
 
     yield
 
-    # Graceful shutdown sequence
     print("--- Application shutting down... ---")
-    await app.state.redis_client.close()
-    if 'broadcast_task' in app.state and app.state.broadcast_task:
-        app.state.broadcast_task.cancel()
+    if 'broadcast_task' in app.state and app.state.broadcast_task: app.state.broadcast_task.cancel()
+    if 'qc_broadcast_task' in app.state and app.state.qc_broadcast_task: app.state.qc_broadcast_task.cancel()
+    
     app.state.orchestration_service.stop_background_tasks()
     await app.state.modbus_poller.stop()
     app.state.notification_service.stop()
     await app.state.camera_manager.stop()
     await app.state.modbus_controller.disconnect()
+    await app.state.redis_client.close()
     await engine.dispose()
     print("--- Application shutdown complete. ---")
 

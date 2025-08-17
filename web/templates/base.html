@@ -1,3 +1,5 @@
+<!-- rpi_counter_fastapi-dev2/web/templates/base.html -->
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -54,7 +56,6 @@
                         </ul>
                     </li>
                     
-                    <!-- NEW: Help Menu Dropdown -->
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="helpDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                            <i class="bi bi-question-circle-fill"></i> Help
@@ -65,9 +66,12 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="/help/ai_features">AI Features</a></li>
                             <li><a class="dropdown-item" href="/help/ai_labelling">AI Labelling</a></li>
+                            <!-- --- NEW LINK TO TESTING PAGE --- -->
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/qc-testing">AI QC Testing</a></li>
+                            <!-- --- END NEW LINK --- -->
                         </ul>
                     </li>
-                    <!-- END: Help Menu Dropdown -->
 
                     <li class="nav-item"><a class="nav-link" href="/logs">Event Logs</a></li>
                     <li class="nav-item"><a class="nav-link" href="/api-docs">API Docs</a></li>

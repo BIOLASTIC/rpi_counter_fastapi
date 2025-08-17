@@ -62,7 +62,6 @@
                         </div>
                     </div>
                     
-                    <!-- NEW FORM FIELDS -->
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="product-category" class="form-label">Product Category</label>
@@ -73,7 +72,6 @@
                             <input type="text" class="form-control" id="product-size" placeholder="e.g., Small, 12oz, 24x18x12">
                         </div>
                     </div>
-                    <!-- END NEW FORM FIELDS -->
 
                     <div class="mb-3">
                         <label for="product-description" class="form-label">Description</label>
@@ -106,6 +104,30 @@
                             </div>
                         </div>
                     </fieldset>
+                    
+                    <fieldset class="border p-3 mb-3">
+                        <legend class="float-none w-auto px-2 fs-6">Dynamic AI Quality Control</legend>
+                        <p class="small text-muted">Enable the specific AI checks to be performed for this product.</p>
+                        <div class="row">
+                            <div class="col-md-3 col-6 form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" role="switch" id="verify-category">
+                                <label class="form-check-label" for="verify-category">Verify Category</label>
+                            </div>
+                             <div class="col-md-3 col-6 form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" role="switch" id="verify-size">
+                                <label class="form-check-label" for="verify-size">Verify Size</label>
+                            </div>
+                             <div class="col-md-3 col-6 form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" role="switch" id="verify-defects">
+                                <label class="form-check-label" for="verify-defects">Verify Defects</label>
+                            </div>
+                             <div class="col-md-3 col-6 form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" role="switch" id="verify-ticks">
+                                <label class="form-check-label" for="verify-ticks">Verify Ticks</label>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="d-flex justify-content-end">
                         <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-success">Save Product</button>

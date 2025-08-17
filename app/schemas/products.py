@@ -7,10 +7,8 @@ from app.models.product import ProductStatus
 class ProductBase(BaseModel):
     name: str
     
-    # --- NEW FIELDS ---
     category: Optional[str] = None
     size: Optional[str] = None
-    # --- END OF NEW FIELDS ---
     
     description: Optional[str] = None
     version: str = "1.0.0"
@@ -19,16 +17,21 @@ class ProductBase(BaseModel):
     min_sensor_block_time_ms: Optional[int] = None
     max_sensor_block_time_ms: Optional[int] = None
 
+    # --- NEW FIELDS FOR DYNAMIC QC ---
+    verify_category: bool = False
+    verify_size: bool = False
+    verify_defects: bool = False
+    verify_ticks: bool = False
+    # --- END OF NEW FIELDS ---
+
 class ProductCreate(ProductBase):
     pass
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     
-    # --- NEW FIELDS ---
     category: Optional[str] = None
     size: Optional[str] = None
-    # --- END OF NEW FIELDS ---
 
     description: Optional[str] = None
     version: Optional[str] = None
@@ -36,6 +39,13 @@ class ProductUpdate(BaseModel):
     ai_model_path: Optional[str] = None
     min_sensor_block_time_ms: Optional[int] = None
     max_sensor_block_time_ms: Optional[int] = None
+
+    # --- NEW FIELDS FOR DYNAMIC QC ---
+    verify_category: Optional[bool] = None
+    verify_size: Optional[bool] = None
+    verify_defects: Optional[bool] = None
+    verify_ticks: Optional[bool] = None
+    # --- END OF NEW FIELDS ---
 
 class ProductOut(ProductBase):
     model_config = ConfigDict(from_attributes=True)

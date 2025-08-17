@@ -115,6 +115,7 @@ For the system to work, both the main web app and the camera service must be run
 Run each service in a separate terminal to see live log output.
 -   **Terminal 1 (Main Web App):**
     ```bash
+    source venv/bin/activate
     uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env --reload
     ```
 -   **Terminal 2 (Camera Service):**
