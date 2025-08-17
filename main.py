@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
@@ -105,22 +106,30 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(5)
 
     async def qc_image_broadcaster():
-        pubsub = app.state.redis_client.pubsub()
+        # Note: We don't set decode_responses=True here because the payload might be complex JSON
+        pubsub_client = redis.from_url("redis://localhost")
+        pubsub = pubsub_client.pubsub()
         await pubsub.subscribe("qc_annotated_image:new")
         print("QC Image Broadcaster: Subscribed to Redis channel.")
         while True:
             try:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
                 if message and message.get("type") == "message":
-                    image_path = message['data'].decode('utf-8')
-                    payload = {"type": "qc_update", "data": {"image_path": image_path}}
+                    # The message data is now a JSON string in bytes
+                    payload_str = message['data'].decode('utf-8')
+                    # We parse it into a dictionary
+                    image_data = json.loads(payload_str)
+                    # We then wrap this dictionary in our WebSocket message structure
+                    payload = {"type": "qc_update", "data": image_data}
                     await websocket_manager.broadcast_json(payload)
-                    print(f"QC Image Broadcaster: Sent new image path to UI: {image_path}")
+                    print(f"QC Image Broadcaster: Sent new image data to UI: {image_data}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"Error in QC Image Broadcaster loop: {e}")
                 await asyncio.sleep(5)
+        await pubsub_client.close()
+
     
     app.state.broadcast_task = asyncio.create_task(broadcast_updates())
     app.state.qc_broadcast_task = asyncio.create_task(qc_image_broadcaster())

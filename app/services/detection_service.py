@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+import json
 from collections import deque
 from typing import Dict, Deque, List, Optional, Any
 import httpx
@@ -109,112 +110,121 @@ class AsyncDetectionService:
                 reason = f"Stalled product detected on conveyor (ID: {serial_number})"
                 await self._orchestration.trigger_run_failure(reason)
     
-    def _annotate_image(self, image_path: str, qc_results: Dict[str, Any]) -> str:
-        """Draws QC results onto an image and saves it in a new 'annotated' subdirectory."""
+    def _annotate_image_from_results(self, image_path: str, qc_results: Dict[str, Any]) -> str:
         try:
             image = cv2.imread(image_path)
-            if image is None:
-                print(f"ANNOTATION ERROR: Could not read image from {image_path}")
-                return image_path 
+            if image is None: return image_path
 
             original_path_obj = Path(image_path)
             annotated_dir = original_path_obj.parent / "annotated"
             annotated_dir.mkdir(exist_ok=True)
-            
-            results = qc_results.get("identification_results", {})
-            defects_result = results.get("defects", {})
-            defects = defects_result.get("defects", [])
 
-            if not defects:
-                text = "NO DETECTION"
-                font_scale = 3
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                thickness = 4
-                text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
-                text_x = (image.shape[1] - text_size[0]) // 2
-                text_y = (image.shape[0] + text_size[1]) // 2
-                cv2.putText(image, text, (text_x, text_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
-            else:
-                for defect in defects:
-                    box = defect.get("bounding_box", {})
-                    x, y, w, h = int(box.get("x", 0)), int(box.get("y", 0)), int(box.get("width", 0)), int(box.get("height", 0))
-                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    label = f'{defect.get("defect_type", "N/A")}: {defect.get("confidence", 0):.2f}'
-                    cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA)
+            id_results = qc_results.get("identification_results", {})
+            has_drawn_anything = False
 
-            new_filename = original_path_obj.name
-            save_path = str(annotated_dir / new_filename)
+            def draw_bounding_box(box_data, label, color, thickness, label_inside=False):
+                nonlocal has_drawn_anything
+                if not box_data: return
+                x, y, w, h = int(box_data.get("x", 0)), int(box_data.get("y", 0)), int(box_data.get("width", 0)), int(box_data.get("height", 0))
+                
+                cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness)
+                has_drawn_anything = True
+
+                font_scale, font_thickness = 1.0, 2
+                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+                
+                if label_inside:
+                    text_y = y + text_h + 10
+                    cv2.rectangle(image, (x, y), (x + text_w + 10, text_y + 10), color, -1)
+                    cv2.putText(image, label, (x + 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
+                else:
+                    text_y, bg_y = y - 10, y - text_h - 20
+                    cv2.rectangle(image, (x, bg_y), (x + text_w + 10, text_y + 10), color, -1)
+                    cv2.putText(image, label, (x + 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
+
+            qc_check = id_results.get("qc")
+            if qc_check and qc_check.get("overall_status"):
+                color = (0, 255, 0) if qc_check['overall_status'] == "ACCEPT" else (0, 0, 255)
+                draw_bounding_box(qc_check.get("bounding_box"), f"Status: {qc_check['overall_status']}", color, 10, label_inside=True)
+
+            category_check = id_results.get("category")
+            if category_check and category_check.get("detected_product_type"):
+                label = f"Type: {category_check['detected_product_type']} ({category_check.get('confidence', 0):.2f})"
+                draw_bounding_box(category_check.get("bounding_box"), label, (255, 0, 0), 5)
+
+            defects = id_results.get("defects", {}).get("defects", [])
+            for defect in defects:
+                label = f"Defect: {defect.get('defect_type', 'N/A')} ({defect.get('confidence', 0):.2f})"
+                draw_bounding_box(defect.get("bounding_box"), label, (0, 255, 255), 3)
+
+            if not has_drawn_anything:
+                cv2.putText(image, "NO DETECTIONS", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
+
+            save_path = str(annotated_dir / original_path_obj.name)
             cv2.imwrite(save_path, image)
-            
-            return f"/captures/{original_path_obj.parts[-2]}/annotated/{new_filename}"
-
+            return f"/captures/{original_path_obj.parts[-2]}/annotated/{original_path_obj.name}"
         except Exception as e:
             print(f"FATAL ERROR during image annotation: {e}")
             return image_path
 
     async def _run_qc_and_update_db(self, detection_log_id: int, serial_number: str, image_path: str):
-        """Standalone task to run QC and update the database, preventing blocking."""
         active_profile = self._orchestration.get_active_profile()
-        if not (active_profile and active_profile.product):
-            return
-
-        product = active_profile.product
-        checks = []
-        if product.verify_category: checks.append("product_category")
-        if product.verify_size: checks.append("size")
-        if product.verify_defects: checks.append("defects")
-        if product.verify_ticks: checks.append("ticks")
-
-        if not checks:
-            return
+        product = active_profile.product if active_profile else None
+        checks = ['qc']
+        has_dynamic_checks = False
+        if product:
+            if product.verify_category: checks.append("product_category"); has_dynamic_checks = True
+            if product.verify_size: checks.append("size"); has_dynamic_checks = True
+            if product.verify_defects: checks.append("defects"); has_dynamic_checks = True
+            if product.verify_ticks: checks.append("ticks"); has_dynamic_checks = True
 
         full_image_path = str(Path(settings.CAMERA_CAPTURES_DIR).parent.parent / image_path.lstrip('/'))
-        qc_results = await self._qc_api_service.perform_inspection(
-            image_path=full_image_path,
-            serial_number=serial_number,
-            checks=checks
-        )
-
+        qc_results = await self._qc_api_service.perform_inspection(image_path=full_image_path, serial_number=serial_number, checks=checks)
+        
+        annotated_path = image_path 
         if qc_results:
-            annotated_path = self._annotate_image(full_image_path, qc_results)
+            annotated_path = self._annotate_image_from_results(full_image_path, qc_results)
+        
+        final_annotated_path = annotated_path if has_dynamic_checks else image_path
             
-            try:
-                async with self._get_db_session() as session:
-                    log_entry = await session.get(DetectionEventLog, detection_log_id)
-                    if log_entry:
-                        log_entry.annotated_image_path = annotated_path
-                        await session.commit()
-                        print(f"DB updated with annotated path for S/N {serial_number}")
-            except Exception as e:
-                print(f"ERROR: Could not update DB with annotated path: {e}")
-            
-            await self._redis.publish("qc_annotated_image:new", annotated_path)
+        try:
+            async with self._get_db_session() as session:
+                log_entry = await session.get(DetectionEventLog, detection_log_id)
+                if log_entry:
+                    log_entry.annotated_image_path = final_annotated_path
+                    await session.commit()
+        except Exception as e:
+            print(f"ERROR: Could not update DB with annotated path: {e}")
+        
+        # --- THIS IS THE KEY CHANGE ---
+        # The payload now includes the full results dictionary along with the image paths.
+        broadcast_payload = json.dumps({
+            "annotated_path": final_annotated_path,
+            "original_path": image_path,
+            "results": qc_results if has_dynamic_checks else None # Send null if only default QC ran
+        })
+        await self._redis.publish("qc_annotated_image:new", broadcast_payload)
 
     async def handle_sensor_event(self, event: SensorEvent):
         async with self._lock:
             if self._orchestration.get_status()["mode"] not in [OperatingMode.RUNNING.value, OperatingMode.POST_RUN_DELAY.value]:
                 if self._stalled_product_timers:
-                    for timer in self._stalled_product_timers.values():
-                        timer.cancel()
+                    for timer in self._stalled_product_timers.values(): timer.cancel()
                     self._stalled_product_timers.clear()
                 return
 
             if event.sensor_id == settings.SENSORS.ENTRY_CHANNEL:
                 if event.new_state == SensorState.TRIGGERED:
                     if self._orchestration.get_status()["mode"] != OperatingMode.RUNNING.value: return
-                        
                     self._entry_timestamps[event.sensor_id] = event.timestamp
-                    
                     serial_number = str(uuid.uuid4())
                     self._in_flight_objects.append(serial_number)
-                    
                     timeout_sec = self._conveyor_config.MAX_TRANSIT_TIME_SEC
                     loop = asyncio.get_running_loop()
                     timer_handle = loop.call_later(timeout_sec, lambda: asyncio.create_task(self._handle_stalled_product(serial_number)))
                     self._stalled_product_timers[serial_number] = timer_handle
                     
-                    if settings.CAMERA_TRIGGER_DELAY_MS > 0:
-                        await asyncio.sleep(settings.CAMERA_TRIGGER_DELAY_MS / 1000.0)
+                    if settings.CAMERA_TRIGGER_DELAY_MS > 0: await asyncio.sleep(settings.CAMERA_TRIGGER_DELAY_MS / 1000.0)
                     
                     image_path = None
                     if self._active_camera_ids:
@@ -225,18 +235,13 @@ class AsyncDetectionService:
                         detection_log_id = None
                         try:
                             async with self._get_db_session() as session:
-                                new_event = DetectionEventLog(
-                                    run_log_id=active_run_id, 
-                                    image_path=image_path,
-                                    serial_number=serial_number
-                                )
+                                new_event = DetectionEventLog(run_log_id=active_run_id, image_path=image_path, serial_number=serial_number)
                                 session.add(new_event)
                                 await session.commit()
                                 await session.refresh(new_event)
                                 detection_log_id = new_event.id
                         except Exception as e:
                             print(f"ERROR: Could not log detection event to database: {e}")
-
                         if detection_log_id and image_path:
                             asyncio.create_task(self._run_qc_and_update_db(detection_log_id, serial_number, image_path))
                 
@@ -247,7 +252,6 @@ class AsyncDetectionService:
                 if self._in_flight_objects:
                     exiting_serial_number = self._in_flight_objects.popleft()
                     timer_to_cancel = self._stalled_product_timers.pop(exiting_serial_number, None)
-                    if timer_to_cancel:
-                        timer_to_cancel.cancel()
+                    if timer_to_cancel: timer_to_cancel.cancel()
                     await self._orchestration.on_exit_sensor_triggered()
                     await self._orchestration.on_box_processed()

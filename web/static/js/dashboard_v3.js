@@ -1,223 +1,260 @@
-// rpi_counter_fastapi-dev2/web/static/js/dashboard_v3.js
+// /static/js/dashboard_v3.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    // --- Elements ---
-    const conveyorMode = document.getElementById('conveyor-mode');
-    const onBeltCount = document.getElementById('count-on-belt');
-    const exitedCount = document.getElementById('count-exited');
-    const progressPath = document.getElementById('progress-path');
-    const progressText = document.getElementById('progress-percentage');
-    const progressDetails = document.getElementById('progress-details');
-    const activeProfileDisplay = document.getElementById('active-profile-display');
-    const alarmBlock = document.getElementById('run-alarm-block');
-    const alarmMessage = document.getElementById('run-alarm-message');
-    const liveCameraFeed = document.getElementById('live-camera-feed');
-    const liveFeedTitle = document.getElementById('live-feed-title');
-    const cameraSelectBtns = document.querySelectorAll('.camera-select-btn');
-
-    // --- NEW: Run Detail Elements ---
-    const runDetailBatch = document.getElementById('run-detail-batch');
-    const runDetailOperator = document.getElementById('run-detail-operator');
-
-    // --- Control Elements ---
-    const startRunBtn = document.getElementById('start-run-btn');
-    const stopRunBtn = document.getElementById('stop-run-btn');
-    const resetAllBtn = document.getElementById('reset-all-btn');
-    const acknowledgeAlarmBtn = document.getElementById('acknowledge-alarm-btn');
-    const profileSelect = document.getElementById('object-profile-select');
-    const targetCountInput = document.getElementById('target-count-input');
-    const postBatchDelayInput = document.getElementById('post-batch-delay-input');
-    const manualToggles = document.querySelectorAll('.manual-control-toggle input[type="checkbox"]');
-    
-    // --- Pre-Run Modal Elements ---
-    const preRunModal = new bootstrap.Modal(document.getElementById('pre-run-modal'));
-    const operatorSelect = document.getElementById('operator-select');
-    const batchCodeInput = document.getElementById('batch-code-input');
-    const reviewRunBtn = document.getElementById('review-run-btn');
-    const goBackBtn = document.getElementById('go-back-btn');
-    const startFinalRunBtn = document.getElementById('start-final-run-btn');
-    const preRunInputView = document.getElementById('pre-run-input-view');
-    const preRunConfirmView = document.getElementById('pre-run-confirm-view');
-
-    // --- Animation & State Elements ---
-    const conveyorBelt = document.getElementById('conveyor-belt');
-    const animationZone = document.getElementById('animation-zone');
-    const animationTime = (parseFloat(animationZone.dataset.animationTime) || 5) * 1000;
-    let lastInFlightCount = 0;
-
-    // --- WebSocket Setup ---
+document.addEventListener('DOMContentLoaded', function () {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
     let socket;
 
+    const elements = {
+        // Main Dashboard
+        countExited: document.getElementById('count-exited'),
+        countOnBelt: document.getElementById('count-on-belt'),
+        conveyorMode: document.getElementById('conveyor-mode'),
+        conveyorBelt: document.getElementById('conveyor-belt'),
+        animationZone: document.getElementById('animation-zone'),
+        // Run Status
+        progressPath: document.getElementById('progress-path'),
+        progressPercentage: document.getElementById('progress-percentage'),
+        progressDetails: document.getElementById('progress-details'),
+        activeProfileDisplay: document.getElementById('active-profile-display'),
+        runDetailBatch: document.getElementById('run-detail-batch'),
+        runDetailOperator: document.getElementById('run-detail-operator'),
+        // Camera Feeds
+        liveCameraFeed: document.getElementById('live-camera-feed'),
+        aiFeedImage: document.getElementById('ai-feed-image'),
+        noAnnotationMessage: document.getElementById('no-annotation-message'),
+        liveFeedTitle: document.getElementById('live-feed-title'),
+        cameraSwitcher: document.getElementById('camera-switcher'),
+        // AI Details (NEW)
+        aiDetailsSection: document.getElementById('ai-details-section'),
+        aiDetailsQc: document.getElementById('ai-details-qc'),
+        aiDetailsCategory: document.getElementById('ai-details-category'),
+        aiDetailsSize: document.getElementById('ai-details-size'),
+        aiDetailsDefects: document.getElementById('ai-details-defects'),
+        // Alarm
+        runAlarmBlock: document.getElementById('run-alarm-block'),
+        runAlarmMessage: document.getElementById('run-alarm-message'),
+        // Modals & Controls
+        preRunModal: new bootstrap.Modal(document.getElementById('pre-run-modal')),
+        startRunBtn: document.getElementById('start-run-btn'),
+        stopRunBtn: document.getElementById('stop-run-btn'),
+        resetAllBtn: document.getElementById('reset-all-btn'),
+        acknowledgeAlarmBtn: document.getElementById('acknowledge-alarm-btn'),
+        objectProfileSelect: document.getElementById('object-profile-select'),
+        targetCountInput: document.getElementById('target-count-input'),
+        postBatchDelayInput: document.getElementById('post-batch-delay-input'),
+        operatorSelect: document.getElementById('operator-select'),
+        batchCodeInput: document.getElementById('batch-code-input'),
+        reviewRunBtn: document.getElementById('review-run-btn'),
+        goBackBtn: document.getElementById('go-back-btn'),
+        startFinalRunBtn: document.getElementById('start-final-run-btn'),
+        confirmOperator: document.getElementById('confirm-operator'),
+        confirmBatchCode: document.getElementById('confirm-batch-code'),
+        confirmRecipe: document.getElementById('confirm-recipe'),
+        confirmTarget: document.getElementById('confirm-target'),
+        preRunInputView: document.getElementById('pre-run-input-view'),
+        preRunConfirmView: document.getElementById('pre-run-confirm-view'),
+    };
+
+    let lastExitedCount = -1;
+    let selectedCameraId = elements.cameraSwitcher?.querySelector('.camera-select-btn')?.dataset.cameraId || 'rpi';
+
     function connect() {
         socket = new WebSocket(wsUrl);
-        socket.onopen = () => console.log('WebSocket connection established.');
-        socket.onclose = () => {
-            console.log('WebSocket disconnected. Retrying in 3 seconds...');
-            setTimeout(connect, 3000);
+        socket.onopen = () => console.log("[WebSocket] Connection established.");
+        socket.onclose = (event) => {
+            console.log("[WebSocket] Connection died. Reconnecting in 1 second.", event);
+            setTimeout(connect, 1000);
         };
-        socket.onerror = (error) => console.error('WebSocket error:', error);
-        socket.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'full_status') {
-                    updateSystemStatus(message.data.system);
-                    updateOrchestrationStatus(message.data.orchestration);
-                }
-            } catch (e) {
-                console.warn('Received non-JSON message:', event.data);
-            }
-        };
+        socket.onerror = (error) => console.error(`[WebSocket] Error: ${error.message}`);
+        socket.onmessage = handleWebSocketMessage;
     }
 
-    // --- Update Functions ---
-    const updateSystemStatus = (status) => {
-        if (!status) return;
-        updateBadge('status-sensor-1', status.sensor_1_status, { on: 'triggered', off: 'clear' });
-        updateBadge('status-sensor-2', status.sensor_2_status, { on: 'triggered', off: 'clear' });
-        updateBadge('status-io-module', status.io_module_status === 'ok', { on: 'ok', off: 'error' });
-        
-        manualToggles.forEach(toggle => {
-            const key = toggle.id.replace('control-', '').replace('-toggle', '');
-            toggle.checked = status[`${key}_status`] || status[`${key}_relay_status`] || false;
-        });
-
-        onBeltCount.textContent = status.in_flight_count;
-        conveyorBelt.classList.toggle('running', status.conveyor_relay_status);
-
-        if (status.in_flight_count > lastInFlightCount) {
-            triggerBoxAnimation();
+    function handleWebSocketMessage(event) {
+        try {
+            const message = JSON.parse(event.data);
+            if (message.type === 'full_status') {
+                updateDashboard(message.data);
+            } else if (message.type === 'qc_update') {
+                updateAiFeed(message.data);
+            }
+        } catch (e) {
+            console.warn("Received non-JSON message from WebSocket:", event.data);
         }
-        lastInFlightCount = status.in_flight_count;
-    };
+    }
 
-    const updateOrchestrationStatus = (status) => {
-        if (!status) return;
+    function updateDashboard(data) {
+        const { system, orchestration } = data;
+        elements.countExited.textContent = orchestration.run_progress;
+        elements.countOnBelt.textContent = system.in_flight_count;
+        elements.conveyorMode.textContent = orchestration.mode;
+        const isRunning = orchestration.mode === 'Running';
+        elements.conveyorBelt.classList.toggle('running', isRunning);
+        if (orchestration.run_progress > lastExitedCount && isRunning) triggerBoxAnimation();
+        lastExitedCount = orchestration.run_progress;
+        updateProgressCircle(orchestration.run_progress, orchestration.target_count);
+        elements.activeProfileDisplay.textContent = orchestration.active_profile || 'None';
+        elements.runDetailBatch.textContent = orchestration.batch_code || 'N/A';
+        elements.runDetailOperator.textContent = orchestration.operator_name || 'N/A';
+        updateAlarm(orchestration.active_alarm_message);
+        updateSystemToggles(system);
+    }
 
-        conveyorMode.textContent = status.mode;
-        exitedCount.textContent = status.run_progress;
-        
-        const target = status.target_count;
-        const progress = status.run_progress;
-        const percentage = (target > 0) ? Math.min(100, (progress / target) * 100) : 0;
-        
-        progressText.textContent = `${Math.round(percentage)}%`;
-        progressDetails.textContent = `${progress} / ${target > 0 ? target : '∞'}`;
-        const circumference = 2 * Math.PI * 45;
-        const offset = circumference - (percentage / 100) * circumference;
-        progressPath.style.strokeDashoffset = offset;
+    function updateAiFeed(data) {
+        if (!data || !data.original_path) return;
+        const { annotated_path, original_path, results } = data;
+        const hasAnnotation = annotated_path !== original_path;
+        const cacheBuster = `?t=${new Date().getTime()}`;
 
-        activeProfileDisplay.textContent = status.active_profile;
-        activeProfileDisplay.className = `badge ${status.active_profile !== 'None' ? 'bg-info' : 'bg-secondary'}`;
+        elements.aiFeedImage.src = hasAnnotation ? `${annotated_path}${cacheBuster}` : `${original_path}${cacheBuster}`;
+        elements.noAnnotationMessage.style.display = hasAnnotation ? 'none' : 'flex';
+        updateAiDetails(results, hasAnnotation);
+    }
+
+    function updateAiDetails(results, hasAnnotation) {
+        if (!hasAnnotation || !results) {
+            elements.aiDetailsSection.style.display = 'none';
+            return;
+        }
+
+        const idResults = results.identification_results || {};
         
-        if (status.active_alarm_message) {
-            alarmMessage.textContent = status.active_alarm_message;
-            alarmBlock.style.display = 'flex';
+        const qc = idResults.qc;
+        if (qc && qc.overall_status) {
+            elements.aiDetailsQc.textContent = qc.overall_status;
+            elements.aiDetailsQc.className = `detail-value status-${qc.overall_status.toLowerCase()}`;
         } else {
-            alarmBlock.style.display = 'none';
+            elements.aiDetailsQc.textContent = 'N/A';
+            elements.aiDetailsQc.className = 'detail-value';
         }
 
-        // --- NEW: Update the new detail fields ---
-        runDetailBatch.textContent = status.batch_code || 'N/A';
-        runDetailOperator.textContent = status.operator_name || 'N/A';
-        // --- END NEW ---
-    };
+        const category = idResults.category;
+        elements.aiDetailsCategory.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+        
+        const size = idResults.size;
+        elements.aiDetailsSize.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
+        
+        const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
+        elements.aiDetailsDefects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
 
-    const updateBadge = (id, condition, states = { on: 'ON', off: 'OFF' }) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.textContent = (condition ? states.on : states.off).toUpperCase();
-        el.className = `status-badge ${condition ? 'ok' : 'error'}`;
-    };
+        elements.aiDetailsSection.style.display = 'block';
+    }
 
-    const triggerBoxAnimation = () => {
+
+    function triggerBoxAnimation() {
         const box = document.createElement('div');
         box.className = 'box';
-        conveyorBelt.appendChild(box);
-        box.style.animation = `move-box ${animationTime / 1000}s linear forwards`;
-        setTimeout(() => box.remove(), animationTime);
-    };
+        const animationTime = elements.animationZone.dataset.animationTime || 5;
+        box.style.animation = `move-box ${animationTime}s linear forwards`;
+        elements.animationZone.appendChild(box);
+        setTimeout(() => box.remove(), animationTime * 1000);
+    }
 
-    const apiPost = (endpoint, data = {}) => {
-        return fetch(`/api/v1${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+    function updateProgressCircle(current, target) {
+        const percentage = (target > 0) ? Math.min(100, (current / target) * 100) : 0;
+        const circumference = 2 * Math.PI * 45;
+        const offset = circumference - (percentage / 100) * circumference;
+        elements.progressPath.style.strokeDashoffset = offset;
+        elements.progressPercentage.textContent = `${Math.round(percentage)}%`;
+        elements.progressDetails.textContent = `${current} / ${(target === 0) ? '∞' : target}`;
+    }
+
+    function updateAlarm(alarmMessage) {
+        elements.runAlarmBlock.style.display = alarmMessage ? 'flex' : 'none';
+        elements.runAlarmMessage.textContent = alarmMessage || '';
+    }
+
+    function updateSystemToggles(system) {
+        document.querySelectorAll('.control-toggle').forEach(toggle => {
+            const key = toggle.id.replace('control-', '').replace('-toggle', '');
+            if (system && typeof system[`${key}_relay_status`] !== 'undefined') {
+                toggle.checked = system[`${key}_relay_status`];
+            }
         });
-    };
-    
-    // --- Event Listeners (no changes in this section) ---
-    startRunBtn.addEventListener('click', async () => {
-        if (!profileSelect.value) return alert('Please select an Object Profile (Recipe) first.');
+    }
+
+    async function sendApiRequest(endpoint, method = 'POST', body = null) {
         try {
-            const operators = await (await fetch('/api/v1/operators/')).json();
-            operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>' + operators
-                .filter(op => op.status === 'Active')
-                .map(op => `<option value="${op.id}">${op.name}</option>`).join('');
-            preRunInputView.style.display = 'block';
-            preRunConfirmView.style.display = 'none';
-            batchCodeInput.value = `B${new Date().toISOString().slice(0,10).replace(/-/g,"")}-${Date.now().toString().slice(-5)}`;
-            preRunModal.show();
-        } catch (e) {
-            alert('Could not load operators. Please check the Operator Master.');
+            const options = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) options.body = JSON.stringify(body);
+            const response = await fetch(`/api/v1${endpoint}`, options);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'API request failed');
+            }
+            return await response.json();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
         }
-    });
+    }
 
-    reviewRunBtn.addEventListener('click', () => {
-        if (!operatorSelect.value || !batchCodeInput.value) return alert('Operator and Batch Code are required.');
-        document.getElementById('confirm-operator').textContent = operatorSelect.options[operatorSelect.selectedIndex].text;
-        document.getElementById('confirm-batch-code').textContent = batchCodeInput.value;
-        document.getElementById('confirm-recipe').textContent = profileSelect.options[profileSelect.selectedIndex].text;
-        document.getElementById('confirm-target').textContent = targetCountInput.value;
-        preRunInputView.style.display = 'none';
-        preRunConfirmView.style.display = 'block';
-    });
-
-    goBackBtn.addEventListener('click', () => {
-        preRunInputView.style.display = 'block';
-        preRunConfirmView.style.display = 'none';
-    });
-
-    startFinalRunBtn.addEventListener('click', async () => {
-        const payload = {
-            object_profile_id: parseInt(profileSelect.value),
-            target_count: parseInt(targetCountInput.value),
-            post_batch_delay_sec: parseInt(postBatchDelayInput.value),
-            operator_id: parseInt(operatorSelect.value),
-            batch_code: batchCodeInput.value
-        };
-        const response = await apiPost('/orchestration/run/start', payload);
-        if (!response.ok) {
-            const error = await response.json();
-            alert(`Failed to start run: ${error.detail}`);
-        }
-        preRunModal.hide();
-    });
-
-    stopRunBtn.addEventListener('click', () => apiPost('/orchestration/run/stop'));
-    resetAllBtn.addEventListener('click', () => {
-        if (confirm('This will stop all hardware and reset system state. Are you sure?')) apiPost('/system/reset-all');
-    });
-    acknowledgeAlarmBtn.addEventListener('click', () => apiPost('/orchestration/run/acknowledge-alarm'));
-
-    manualToggles.forEach(toggle => {
-        toggle.addEventListener('change', (e) => {
-            const name = e.target.id.replace('control-', '').replace('-toggle', '');
-            apiPost(`/outputs/toggle/${name}`);
+    function setupEventListeners() {
+        elements.startRunBtn.addEventListener('click', () => {
+            if (!elements.objectProfileSelect.value) {
+                alert('Please select an Object Profile (Recipe) before starting.');
+                return;
+            }
+            elements.preRunInputView.style.display = 'block';
+            elements.preRunConfirmView.style.display = 'none';
+            loadOperators();
+            elements.preRunModal.show();
         });
-    });
-
-    cameraSelectBtns.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const camId = e.target.dataset.cameraId;
-            liveCameraFeed.src = `/api/v1/camera/stream/${camId}?t=${new Date().getTime()}`;
-            liveFeedTitle.textContent = `LIVE CAMERA (${camId.toUpperCase()})`;
+        elements.reviewRunBtn.addEventListener('click', () => {
+            if (!elements.operatorSelect.value || !elements.batchCodeInput.value) return alert('Please select an operator and enter a batch code.');
+            elements.confirmOperator.textContent = elements.operatorSelect.options[elements.operatorSelect.selectedIndex].text;
+            elements.confirmBatchCode.textContent = elements.batchCodeInput.value;
+            elements.confirmRecipe.textContent = elements.objectProfileSelect.options[elements.objectProfileSelect.selectedIndex].text;
+            elements.confirmTarget.textContent = elements.targetCountInput.value === '0' ? 'Unlimited' : elements.targetCountInput.value;
+            elements.preRunInputView.style.display = 'none';
+            elements.preRunConfirmView.style.display = 'block';
         });
-    });
+        elements.goBackBtn.addEventListener('click', () => {
+            elements.preRunInputView.style.display = 'block';
+            elements.preRunConfirmView.style.display = 'none';
+        });
+        elements.startFinalRunBtn.addEventListener('click', async () => {
+            const payload = {
+                object_profile_id: parseInt(elements.objectProfileSelect.value),
+                target_count: parseInt(elements.targetCountInput.value),
+                post_batch_delay_sec: parseInt(elements.postBatchDelayInput.value),
+                operator_id: parseInt(elements.operatorSelect.value),
+                batch_code: elements.batchCodeInput.value
+            };
+            await sendApiRequest('/orchestration/run/start', 'POST', payload);
+            elements.preRunModal.hide();
+        });
+        elements.stopRunBtn.addEventListener('click', () => sendApiRequest('/orchestration/run/stop'));
+        elements.resetAllBtn.addEventListener('click', () => sendApiRequest('/system/reset-all'));
+        elements.acknowledgeAlarmBtn.addEventListener('click', () => sendApiRequest('/orchestration/run/acknowledge-alarm'));
+        document.querySelectorAll('.control-toggle').forEach(toggle => {
+            toggle.addEventListener('change', (e) => sendApiRequest(`/outputs/toggle/${e.target.id.replace('control-','').replace('-toggle','')}`));
+        });
+        elements.cameraSwitcher?.addEventListener('click', (e) => {
+            if (e.target.classList.contains('camera-select-btn')) {
+                selectedCameraId = e.target.dataset.cameraId;
+                updateCameraFeedSource();
+                document.querySelectorAll('.camera-select-btn').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+            }
+        });
+    }
 
-    if (cameraSelectBtns.length > 0) cameraSelectBtns[0].click();
-    
-    // --- Initial Connection ---
+    async function loadOperators() {
+        const response = await fetch('/api/v1/operators/');
+        const operators = await response.json();
+        elements.operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>';
+        operators.forEach(op => {
+            if (op.status === 'Active') elements.operatorSelect.innerHTML += `<option value="${op.id}">${op.name}</option>`;
+        });
+    }
+
+    function updateCameraFeedSource() {
+        elements.liveCameraFeed.src = `/api/v1/camera/stream/${selectedCameraId}?t=${new Date().getTime()}`;
+        elements.liveFeedTitle.textContent = `LIVE CAMERA (${selectedCameraId.toUpperCase()})`;
+    }
+
     connect();
+    setupEventListeners();
+    updateCameraFeedSource();
+    elements.cameraSwitcher?.querySelector('.camera-select-btn')?.classList.add('active');
 });
