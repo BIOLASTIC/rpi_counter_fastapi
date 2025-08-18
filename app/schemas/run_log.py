@@ -16,10 +16,8 @@ class DetectionEventLogOut(BaseModel):
     serial_number: str
     annotated_image_path: Optional[str] = None
     
-    # --- THIS IS THE FIX ---
-    # Expose the new 'results' field to the API.
-    results: Optional[Dict[str, Any]] = None
-    # --- END OF FIX ---
+    # Expose the correct 'details' field from the database model.
+    details: Optional[Dict[str, Any]] = None
 
 class RunLogBase(BaseModel):
     batch_code: str

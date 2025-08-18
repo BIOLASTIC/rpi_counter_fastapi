@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict
 
-from sqlalchemy import Integer, String, DateTime, JSON, ForeignKey, func
+from sqlalchemy import Integer, String, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -19,7 +19,6 @@ class DetectionEventLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     
-    # --- NEW: Unique identifier for this specific detection event ---
     serial_number: Mapped[str] = mapped_column(String, unique=True, index=True, default=lambda: str(uuid.uuid4()))
     
     run_log_id: Mapped[int] = mapped_column(ForeignKey("run_logs.id"), index=True)
@@ -28,9 +27,9 @@ class DetectionEventLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     image_path: Mapped[str] = mapped_column(String, nullable=True)
     
-    # --- NEW: Path for the annotated image after QC analysis ---
     annotated_image_path: Mapped[str] = mapped_column(String, nullable=True)
 
+    # This is the crucial column for storing the AI JSON response.
     details: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=True)
 
     def __repr__(self) -> str:

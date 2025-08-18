@@ -64,68 +64,55 @@ body {
 .alarm-title { margin: 0; font-size: 1rem; letter-spacing: 0.1em; color: var(--accent-red); }
 .alarm-message { margin: 0; font-size: 1.125rem; font-weight: 500; }
 
-/* --- Animation Card --- */
-#animation-zone { position: relative; width: 100%; height: 200px; }
+/* --- THIS IS THE FIX for the card height --- */
+/* 1. Animation Card Height Reduction */
+#animation-zone { position: relative; width: 100%; height: 70px; /* Reduced height */ }
+.box { position: absolute; top: 50%; width: 30px; height: 30px; /* Scaled down box */ background-color: #d2b48c; border: 2px solid #a07d5b; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); transform: translate(-100%, -50%); }
+#conveyor-overlay-info { padding: 0.5rem 1rem; /* Reduced padding */ gap: 1.5rem; /* Reduced gap */ }
+.info-label { font-size: 0.65rem; /* Scaled down font */ }
+.info-value { font-size: 1rem; /* Scaled down font */ }
+.info-box-main .info-value-main { font-size: 2rem; /* Scaled down font */ }
+
+/* 2. Run Status Card Height Reduction & Rearrangement */
+.run-status-content-wrapper { display: flex; align-items: center; gap: 1.5rem; }
+.progress-container { position: relative; width: 100%; max-width: 90px; /* Reduced size */ margin: 0; flex-shrink: 0; }
+#run-details-container { flex-grow: 1; }
+#progress-percentage { font-size: 1.25rem; /* Reduced font size */ }
+#progress-details { font-size: 0.6rem; /* Reduced font size */ }
+/* --- END OF FIX --- */
+
 #conveyor-belt { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #262b38; background-image: linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c), linear-gradient(45deg, #33394c 25%, transparent 25%, transparent 75%, #33394c 75%, #33394c); background-size: 40px 40px; background-position: 0 0, 20px 20px; }
 #conveyor-belt.running { animation: scroll-background 2s linear infinite; }
-.box { position: absolute; top: 50%; width: 60px; height: 60px; background-color: #d2b48c; border: 2px solid #a07d5b; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); transform: translate(-100%, -50%); }
 #conveyor-belt.running .box { animation: move-box var(--box-transit-time) linear forwards; }
-#conveyor-overlay-info { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(18, 21, 30, 0.7); backdrop-filter: blur(8px); border: 1px solid var(--border-color); border-radius: 1rem; padding: 1rem 2rem; display: flex; gap: 3rem; align-items: center; }
+#conveyor-overlay-info { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(18, 21, 30, 0.7); backdrop-filter: blur(8px); border: 1px solid var(--border-color); border-radius: 1rem; display: flex; align-items: center; }
 .info-box { text-align: center; }
-.info-label { font-size: 0.8rem; text-transform: uppercase; color: var(--text-secondary); }
-.info-value { font-size: 1.5rem; font-weight: 600; }
-.info-box-main .info-value-main { font-size: 3rem; font-weight: 700; color: var(--accent-teal); }
+.info-box-main .info-value-main { font-weight: 700; color: var(--accent-teal); }
 @keyframes scroll-background { from { background-position: 0 0, 20px 20px; } to { background-position: 40px 0, 60px 20px; } }
 @keyframes move-box { from { transform: translate(-100%, -50%); } to { transform: translate(calc(100vw - 200px), -50%); } }
 
 /* --- Live Feeds Card --- */
 .feeds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 .camera-feed-container { position: relative; background-color: #000; border-radius: 0.75rem; overflow: hidden; border: 1px solid var(--border-color); }
-.camera-feed-container img { width: 100%; display: block; aspect-ratio: 16 / 9; object-fit: cover; }
+.camera-feed-container img, .camera-feed-container canvas { width: 100%; display: block; aspect-ratio: 16 / 9; object-fit: cover; }
 .camera-title-overlay { position: absolute; z-index: 10; top: 8px; left: 8px; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); color: #fff; padding: 4px 10px; border-radius: 0.5rem; font-size: 0.8rem; }
-.no-annotation-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: white; font-size: 1.1rem; font-weight: 500; text-align: center; backdrop-filter: blur(2px); }
 
-/* --- NEW: AI Details Section --- */
-.ai-details-container {
-    background-color: var(--bg-inset);
-    border: 1px solid var(--border-color);
-    border-radius: 0.75rem;
-    padding: 1rem;
-    margin-top: 1.5rem;
-}
-.ai-details-title {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    color: var(--text-secondary);
-}
-.ai-details-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem 1.5rem;
-}
-.detail-label {
-    font-weight: 500;
-    color: var(--text-secondary);
-}
-.detail-value {
-    font-weight: 600;
-    color: var(--text-primary);
-}
+/* --- AI Details Section --- */
+.ai-details-container { background-color: var(--bg-inset); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1rem; margin-top: 1.5rem; }
+.ai-details-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary); }
+.ai-details-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem 1.5rem; }
+.detail-label { font-weight: 500; color: var(--text-secondary); }
+.detail-value { font-weight: 600; color: var(--text-primary); }
 .detail-value.status-accept { color: var(--accent-green); }
 .detail-value.status-reject { color: var(--accent-red); }
 
 /* --- Run Status Card --- */
-.progress-container { position: relative; width: 100%; max-width: 180px; margin: 1rem auto; }
 .progress-container::before { content: ""; display: block; padding-top: 100%; }
 .progress-circle { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .progress-circle__trail, .progress-circle__path { fill: none; stroke-width: 10; stroke-linecap: round; }
 .progress-circle__trail { stroke: #374151; }
-.progress-circle__path { stroke: var(--accent-blue); transition: stroke-dashoffset 0.3s; stroke-dasharray: 282.7; stroke-dashoffset: 282.7; }
+.progress-circle__path { stroke: var(--accent-blue); transition: stroke-dashoffset 0.3s; }
 .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-#progress-percentage { font-size: 2.25rem; font-weight: 700; }
-#progress-details { font-size: 0.875rem; color: var(--text-secondary); }
-.run-detail-item { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; }
+.run-detail-item { display: flex; justify-content: space-between; align-items: center; padding: 0.1rem 0; /* Reduced padding */ }
 .run-detail-label { font-weight: 500; color: var(--text-secondary); }
 .run-detail-value { font-weight: 600; }
 #active-profile-display { background-color: var(--accent-blue); color: #fff; padding: .2em .6em; font-size: .9em;}
@@ -157,6 +144,7 @@ body {
 .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #374151; transition: .4s; border-radius: 28px; }
 .toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
 input:checked + .toggle-slider { background-color: var(--accent-blue); }
+input:disabled + .toggle-slider { background-color: #4b5563; cursor: not-allowed; }
 input:checked + .toggle-slider:before { transform: translateX(24px); }
 
 /* --- Responsive Adjustments --- */

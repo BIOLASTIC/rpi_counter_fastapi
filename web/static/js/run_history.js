@@ -101,25 +101,34 @@ document.addEventListener('DOMContentLoaded', function () {
             item.querySelector('.original-image').src = det.image_path || '/static/images/placeholder.jpg';
             item.querySelector('.annotated-image').src = det.annotated_image_path || det.image_path || '/static/images/placeholder.jpg';
             
-            // --- THIS IS THE FIX ---
-            // Populate the text details from the 'results' object
-            const details = {
+            const detailsElements = {
                 qc: item.querySelector('.details-qc'),
                 category: item.querySelector('.details-category'),
                 size: item.querySelector('.details-size'),
                 defects: item.querySelector('.details-defects'),
             };
 
-            const idResults = det.results ? det.results.identification_results || {} : {};
+            const idResults = det.details ? det.details.identification_results || {} : {};
+            
             const qc = idResults.qc;
-            details.qc.textContent = qc ? qc.overall_status : 'N/A';
+            if (qc && qc.overall_status) {
+                let qcText = qc.overall_status;
+                if (qc.rejection_reason) {
+                    qcText += ` (${qc.rejection_reason})`;
+                }
+                detailsElements.qc.textContent = qcText;
+            } else {
+                detailsElements.qc.textContent = 'N/A';
+            }
+            
             const category = idResults.category;
-            details.category.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+            detailsElements.category.textContent = category && category.detected_product_type ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+            
             const size = idResults.size;
-            details.size.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
+            detailsElements.size.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
+            
             const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
-            details.defects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
-            // --- END OF FIX ---
+            detailsElements.defects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
 
             detectionsContainer.appendChild(item);
         });
@@ -142,7 +151,6 @@ document.addEventListener('DOMContentLoaded', function () {
             operator_id: document.getElementById('filter-operator').value,
             batch_code: document.getElementById('filter-batch-code').value,
         };
-        // Remove empty params
         Object.keys(params).forEach(key => params[key] === '' && delete params[key]);
         loadHistory(params);
     });
@@ -152,7 +160,6 @@ document.addEventListener('DOMContentLoaded', function () {
         loadHistory();
     });
 
-    // Initial Load
     populateFilters();
     loadHistory();
 });

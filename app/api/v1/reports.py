@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 
 # --- THIS IS THE FIX ---
-# The import is changed from the incorrect 'DetectionEvent' to the correct 'DetectionEventLog'.
+# The import is changed to the correct 'DetectionEventLog' model.
 from app.models import get_async_session, RunLog, RunStatus, DetectionEventLog
 # ---------------------
 

@@ -28,7 +28,7 @@ class CameraProfile(Base):
     brightness: Mapped[int] = mapped_column(Integer, default=128)
     autofocus: Mapped[bool] = mapped_column(Boolean, default=True)
     
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:
         return f"<CameraProfile(id={self.id}, name='{self.name}')>"
@@ -50,7 +50,7 @@ class ObjectProfile(Base):
     # Sorting logic for this specific object
     sort_offset_ms: Mapped[int] = mapped_column(Integer, default=0, comment="Time adjustment in ms for sorting (+/- from base travel time)")
     
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # SQLAlchemy relationship to easily access the linked CameraProfile object
     camera_profile: Mapped["CameraProfile"] = relationship()

@@ -19,8 +19,6 @@ from app.services.orchestration_service import AsyncOrchestrationService, Operat
 from app.models.detection import DetectionEventLog
 from config import settings
 
-# --- THIS IS THE FIX (Part 1) ---
-# Define the project root at the top of the file for reliable path construction.
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 class QcApiService:
@@ -171,7 +169,6 @@ class AsyncDetectionService:
             save_path = str(annotated_dir / original_path_obj.name)
             cv2.imwrite(save_path, image)
             return f"/captures/{original_path_obj.parts[-2]}/annotated/{original_path_obj.name}"
-
         except Exception as e:
             print(f"FATAL ERROR during image annotation: {e}")
             return image_path
@@ -187,9 +184,7 @@ class AsyncDetectionService:
             if product.verify_defects: checks.append("defects")
             if product.verify_ticks: checks.append("ticks")
 
-        # --- THIS IS THE FIX (Part 2) ---
-        # Construct the full, absolute path reliably from the project root.
-        full_image_path = str(PROJECT_ROOT / image_path.lstrip('/'))
+        full_image_path = str(PROJECT_ROOT / "web" / "static" / Path(image_path).relative_to('/'))
         
         qc_results = await self._qc_api_service.perform_inspection(image_path=full_image_path, serial_number=serial_number, checks=checks)
         
@@ -202,7 +197,10 @@ class AsyncDetectionService:
                 log_entry = await session.get(DetectionEventLog, detection_log_id)
                 if log_entry:
                     log_entry.annotated_image_path = annotated_path
-                    log_entry.results = qc_results
+                    # --- THIS IS THE FIX ---
+                    # Save the results to the 'details' column instead of the non-existent 'results' column
+                    log_entry.details = qc_results
+                    # --- END OF FIX ---
                     await session.commit()
         except Exception as e:
             print(f"ERROR: Could not update DB with annotated path and results: {e}")
@@ -240,7 +238,7 @@ class AsyncDetectionService:
                         image_path = await self._camera_manager.capture_and_save_image(self._active_camera_ids[0], f'event_{serial_number}')
                     
                     active_run_id = self._orchestration.get_active_run_id()
-                    if active_run_id:
+                    if active_run_id and image_path:
                         detection_log_id = None
                         try:
                             async with self._get_db_session() as session:
@@ -251,7 +249,7 @@ class AsyncDetectionService:
                                 detection_log_id = new_event.id
                         except Exception as e:
                             print(f"ERROR: Could not log detection event to database: {e}")
-                        if detection_log_id and image_path:
+                        if detection_log_id:
                             asyncio.create_task(self._run_qc_and_update_db(detection_log_id, serial_number, image_path))
                 
                 elif event.new_state == SensorState.CLEARED:

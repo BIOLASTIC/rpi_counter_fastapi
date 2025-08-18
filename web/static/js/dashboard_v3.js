@@ -55,12 +55,17 @@ document.addEventListener('DOMContentLoaded', function () {
         confirmTarget: document.getElementById('confirm-target'),
         preRunInputView: document.getElementById('pre-run-input-view'),
         preRunConfirmView: document.getElementById('pre-run-confirm-view'),
+        statusIoModule: document.getElementById('status-io-module'),
+        statusSensor1: document.getElementById('status-sensor-1'),
+        statusSensor2: document.getElementById('status-sensor-2'),
     };
 
-    let lastExitedCount = -1;
+    // --- THIS IS THE FIX (Part 1) ---
+    // Use 'lastInFlightCount' as the trigger instead of the processed count.
+    let lastInFlightCount = 0;
+    // --- END OF FIX ---
     let selectedCameraId = elements.cameraSwitcher?.querySelector('.camera-select-btn')?.dataset.cameraId || 'rpi';
 
-    // --- WebSocket Handling ---
     function connect() {
         socket = new WebSocket(wsUrl);
         socket.onopen = () => console.log("[WebSocket] Connection established.");
@@ -85,10 +90,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function updateAiFeed(data) {
         if (!data || !data.original_path) return;
         const { annotated_path, original_path, results } = data;
-        
-        // Always load the annotated path if it's different, otherwise the original.
         const imageToLoad = (annotated_path && annotated_path !== original_path) ? annotated_path : original_path;
-        
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
@@ -97,13 +99,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const aspectRatio = img.naturalWidth / img.naturalHeight;
             canvas.width = canvas.clientWidth;
             canvas.height = canvas.clientWidth / aspectRatio;
-
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
             updateAiDetails(results);
-
-            // If the paths are the same, it means no annotation was created, so show the message.
             if (annotated_path === original_path) {
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -123,10 +121,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const idResults = results.identification_results || {};
         const qc = idResults.qc;
-        elements.aiDetailsQc.textContent = qc ? qc.overall_status : 'N/A';
-        elements.aiDetailsQc.className = qc ? `detail-value status-${qc.overall_status.toLowerCase()}` : 'detail-value';
+        if (qc && qc.overall_status) {
+            let qcText = qc.overall_status;
+            if (qc.rejection_reason) {
+                qcText += ` (${qc.rejection_reason})`;
+            }
+            elements.aiDetailsQc.textContent = qcText;
+            elements.aiDetailsQc.className = `detail-value status-${qc.overall_status.toLowerCase()}`;
+        } else {
+            elements.aiDetailsQc.textContent = 'N/A';
+            elements.aiDetailsQc.className = 'detail-value';
+        }
         const category = idResults.category;
-        elements.aiDetailsCategory.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+        elements.aiDetailsCategory.textContent = category && category.detected_product_type ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
         const size = idResults.size;
         elements.aiDetailsSize.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
         const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
@@ -134,22 +141,33 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.aiDetailsSection.style.display = 'block';
     }
 
-    // --- All other existing functions remain unchanged ---
     function updateDashboard(data) {
         const { system, orchestration } = data;
         elements.countExited.textContent = orchestration.run_progress;
         elements.countOnBelt.textContent = system.in_flight_count;
         elements.conveyorMode.textContent = orchestration.mode;
-        const isRunning = orchestration.mode === 'Running';
+        const isRunning = orchestration.mode !== 'Stopped';
         elements.conveyorBelt.classList.toggle('running', isRunning);
-        if (orchestration.run_progress > lastExitedCount && isRunning) triggerBoxAnimation();
-        lastExitedCount = orchestration.run_progress;
+
+        // --- THIS IS THE FIX (Part 2) ---
+        // The animation is now triggered by the increase of the in-flight count.
+        const currentInFlightCount = system.in_flight_count;
+        if (currentInFlightCount > lastInFlightCount) {
+            triggerBoxAnimation();
+        }
+        lastInFlightCount = currentInFlightCount;
+        // The old trigger based on 'run_progress' has been removed.
+        // --- END OF FIX ---
+
         updateProgressCircle(orchestration.run_progress, orchestration.target_count);
         elements.activeProfileDisplay.textContent = orchestration.active_profile || 'None';
         elements.runDetailBatch.textContent = orchestration.batch_code || 'N/A';
         elements.runDetailOperator.textContent = orchestration.operator_name || 'N/A';
         updateAlarm(orchestration.active_alarm_message);
-        updateSystemToggles(system);
+        updateSystemToggles(system, isRunning);
+        updateStatusBadge(elements.statusIoModule, system.io_module_status);
+        updateStatusBadge(elements.statusSensor1, system.sensor_1_status, {true: 'TRIGGERED', false: 'CLEAR'});
+        updateStatusBadge(elements.statusSensor2, system.sensor_2_status, {true: 'TRIGGERED', false: 'CLEAR'});
     }
     
     function triggerBoxAnimation() {
@@ -175,17 +193,44 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.runAlarmMessage.textContent = alarmMessage || '';
     }
 
-    function updateSystemToggles(system) {
-        document.querySelectorAll('.control-toggle').forEach(toggle => {
+    function updateStatusBadge(element, status, textMap = {}) {
+        if (!element) return;
+        if (typeof status === 'boolean') {
+            element.textContent = textMap[status] || (status ? 'ON' : 'OFF');
+            element.className = `status-badge ${status ? 'warn' : 'clear'}`;
+        } else {
+            element.textContent = status || '--';
+            element.className = 'status-badge';
+            if (status === 'ok') element.classList.add('ok');
+            else if (status) element.classList.add('error');
+        }
+    }
+
+    function updateSystemToggles(system, isRunning) {
+        document.querySelectorAll('.manual-control-toggle').forEach(container => {
+            const toggle = container.querySelector('input[type="checkbox"]');
+            if (!toggle) return;
             const key = toggle.id.replace('control-', '').replace('-toggle', '');
-            if (system && typeof system[`${key}_relay_status`] !== 'undefined') {
-                toggle.checked = system[`${key}_relay_status`];
+            const statusKey = `${key}_relay_status`;
+            if (system && typeof system[statusKey] !== 'undefined') {
+                toggle.checked = system[statusKey];
+            }
+            toggle.disabled = isRunning;
+            if (isRunning) {
+                container.setAttribute('data-bs-toggle', 'tooltip');
+                container.setAttribute('data-bs-title', 'Controls locked during active run');
+                bootstrap.Tooltip.getOrCreateInstance(container).enable();
+            } else {
+                bootstrap.Tooltip.getOrCreateInstance(container).disable();
+                container.removeAttribute('data-bs-toggle');
+                container.removeAttribute('data-bs-title');
             }
         });
     }
 
     async function sendApiRequest(endpoint, method = 'POST', body = null) {
         try {
+            console.log(`Sending API request: ${method} ${endpoint}`);
             const options = { method, headers: { 'Content-Type': 'application/json' } };
             if (body) options.body = JSON.stringify(body);
             const response = await fetch(`/api/v1${endpoint}`, options);
@@ -195,16 +240,14 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             return await response.json();
         } catch (error) {
+            console.error(`API Error for ${endpoint}:`, error);
             alert(`Error: ${error.message}`);
         }
     }
 
     function setupEventListeners() {
         elements.startRunBtn.addEventListener('click', () => {
-            if (!elements.objectProfileSelect.value) {
-                alert('Please select an Object Profile (Recipe) before starting.');
-                return;
-            }
+            if (!elements.objectProfileSelect.value) return alert('Please select an Object Profile (Recipe) before starting.');
             elements.preRunInputView.style.display = 'block';
             elements.preRunConfirmView.style.display = 'none';
             loadOperators();
@@ -237,9 +280,14 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.stopRunBtn.addEventListener('click', () => sendApiRequest('/orchestration/run/stop'));
         elements.resetAllBtn.addEventListener('click', () => sendApiRequest('/system/reset-all'));
         elements.acknowledgeAlarmBtn.addEventListener('click', () => sendApiRequest('/orchestration/run/acknowledge-alarm'));
-        document.querySelectorAll('.control-toggle').forEach(toggle => {
-            toggle.addEventListener('change', (e) => sendApiRequest(`/outputs/toggle/${e.target.id.replace('control-','').replace('-toggle','')}`));
+        
+        document.querySelectorAll('.manual-control-toggle input[type="checkbox"]').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                const name = e.target.id.replace('control-', '').replace('-toggle', '');
+                sendApiRequest(`/outputs/toggle/${name}`);
+            });
         });
+        
         elements.cameraSwitcher?.addEventListener('click', (e) => {
             if (e.target.classList.contains('camera-select-btn')) {
                 selectedCameraId = e.target.dataset.cameraId;
@@ -264,6 +312,9 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.liveFeedTitle.textContent = `LIVE CAMERA (${selectedCameraId.toUpperCase()})`;
     }
 
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+    
     connect();
     setupEventListeners();
     updateCameraFeedSource();
