@@ -3,7 +3,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.4"> <!-- Version bumped for cache-busting -->
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.5"> <!-- Version bumped -->
 
 <div class="dashboard-container">
 
@@ -60,15 +60,15 @@
                 <div class="camera-title-overlay" id="live-feed-title">LIVE CAMERA</div>
                 <img id="live-camera-feed" src="/static/images/placeholder.jpg" alt="Live camera feed">
             </div>
+            <!-- THIS IS THE FIX: The img tag is replaced with a canvas -->
             <div class="camera-feed-container" id="ai-feed-container">
                 <div class="camera-title-overlay">AI Detection</div>
-                <img id="ai-feed-image" src="/static/images/placeholder.jpg" alt="AI analysis feed">
-                <div id="no-annotation-message" class="no-annotation-overlay" style="display: none;">No annotation available.</div>
+                <canvas id="ai-feed-canvas"></canvas>
             </div>
         </div>
-        <!-- THIS IS THE NEW SECTION FOR DISPLAYING DETAILS -->
+        <!-- This summary section is now dynamically populated by the canvas drawing logic -->
         <div id="ai-details-section" class="ai-details-container" style="display: none;">
-            <h5 class="ai-details-title">AI Detection Results</h5>
+            <h5 class="ai-details-title">Detection Summary</h5>
             <div class="ai-details-grid">
                 <div><span class="detail-label">Quality Status:</span> <span id="ai-details-qc" class="detail-value">--</span></div>
                 <div><span class="detail-label">Product Category:</span> <span id="ai-details-category" class="detail-value">--</span></div>
@@ -78,7 +78,7 @@
         </div>
     </div>
 
-    <!-- Control Section -->
+    <!-- Control Section (No changes) -->
     <div class="grid-card control-card">
         <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
         <div class="control-grid-main">
@@ -98,7 +98,7 @@
         </div>
     </div>
 
-    <!-- System Control Panel -->
+    <!-- System Control Panel (No changes) -->
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
@@ -114,7 +114,7 @@
     </div>
 </div>
 
-<!-- Pre-Run Modal -->
+<!-- Pre-Run Modal (No changes) -->
 <div class="modal fade" id="pre-run-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="pre-run-modal-title">Pre-Run Checklist</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -128,5 +128,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=2.5"></script>
+<script src="/static/js/dashboard_v3.js?v=2.6"></script>
 {% endblock %}

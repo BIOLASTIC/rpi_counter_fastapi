@@ -170,13 +170,13 @@ class AsyncDetectionService:
     async def _run_qc_and_update_db(self, detection_log_id: int, serial_number: str, image_path: str):
         active_profile = self._orchestration.get_active_profile()
         product = active_profile.product if active_profile else None
+        
         checks = ['qc']
-        has_dynamic_checks = False
         if product:
-            if product.verify_category: checks.append("product_category"); has_dynamic_checks = True
-            if product.verify_size: checks.append("size"); has_dynamic_checks = True
-            if product.verify_defects: checks.append("defects"); has_dynamic_checks = True
-            if product.verify_ticks: checks.append("ticks"); has_dynamic_checks = True
+            if product.verify_category: checks.append("product_category")
+            if product.verify_size: checks.append("size")
+            if product.verify_defects: checks.append("defects")
+            if product.verify_ticks: checks.append("ticks")
 
         full_image_path = str(Path(settings.CAMERA_CAPTURES_DIR).parent.parent / image_path.lstrip('/'))
         qc_results = await self._qc_api_service.perform_inspection(image_path=full_image_path, serial_number=serial_number, checks=checks)
@@ -184,24 +184,24 @@ class AsyncDetectionService:
         annotated_path = image_path 
         if qc_results:
             annotated_path = self._annotate_image_from_results(full_image_path, qc_results)
-        
-        final_annotated_path = annotated_path if has_dynamic_checks else image_path
             
         try:
             async with self._get_db_session() as session:
                 log_entry = await session.get(DetectionEventLog, detection_log_id)
                 if log_entry:
-                    log_entry.annotated_image_path = final_annotated_path
+                    # --- THIS IS THE DEFINITIVE FIX ---
+                    # Always save the 'annotated_path' that was returned from the annotation function.
+                    # The flawed conditional logic has been removed.
+                    log_entry.annotated_image_path = annotated_path
+                    log_entry.results = qc_results
                     await session.commit()
         except Exception as e:
-            print(f"ERROR: Could not update DB with annotated path: {e}")
+            print(f"ERROR: Could not update DB with annotated path and results: {e}")
         
-        # --- THIS IS THE KEY CHANGE ---
-        # The payload now includes the full results dictionary along with the image paths.
         broadcast_payload = json.dumps({
-            "annotated_path": final_annotated_path,
+            "annotated_path": annotated_path,
             "original_path": image_path,
-            "results": qc_results if has_dynamic_checks else None # Send null if only default QC ran
+            "results": qc_results
         })
         await self._redis.publish("qc_annotated_image:new", broadcast_payload)
 

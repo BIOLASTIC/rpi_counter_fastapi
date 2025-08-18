@@ -1,131 +1,139 @@
 // rpi_counter_fastapi-dev2/web/static/js/run_history.js
 
 document.addEventListener('DOMContentLoaded', function () {
-    const historyTableBody = document.getElementById('history-table-body');
+    const tableBody = document.getElementById('history-table-body');
     const filterForm = document.getElementById('filter-form');
-    const resetFilterBtn = document.getElementById('reset-filter-btn');
+    const resetBtn = document.getElementById('reset-filter-btn');
     const detectionsModal = new bootstrap.Modal(document.getElementById('detections-modal'));
+    const detectionsContainer = document.getElementById('detections-grid-container');
     const modalTitle = document.getElementById('detections-modal-title');
-    const modalSubtitle = document.getElementById('detections-modal-subtitle');
-    const modalBodyContent = document.getElementById('detections-grid-container');
     const downloadZipBtn = document.getElementById('download-run-zip-btn');
+    const detectionTemplate = document.getElementById('detection-item-template');
 
-    const fetchRunHistory = async (params = {}) => {
-        const query = new URLSearchParams(params).toString();
+    let products = [];
+    let operators = [];
+
+    async function fetchData(url) {
         try {
-            const response = await fetch(`/api/v1/run-history/?${query}`);
-            if (!response.ok) throw new Error('Failed to fetch run history');
-            const runs = await response.json();
-            renderHistoryTable(runs);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return await response.json();
         } catch (error) {
-            console.error('Error fetching run history:', error);
-            historyTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Failed to load run history.</td></tr>`;
+            console.error('Fetch error:', error);
+            return [];
         }
-    };
+    }
 
-    const renderHistoryTable = (runs) => {
-        historyTableBody.innerHTML = '';
+    async function populateFilters() {
+        [products, operators] = await Promise.all([
+            fetchData('/api/v1/products/'),
+            fetchData('/api/v1/operators/')
+        ]);
+        
+        const productFilter = document.getElementById('filter-product');
+        productFilter.innerHTML = '<option value="">All Products</option>';
+        products.forEach(p => productFilter.add(new Option(p.name, p.id)));
+
+        const operatorFilter = document.getElementById('filter-operator');
+        operatorFilter.innerHTML = '<option value="">All Operators</option>';
+        operators.forEach(o => operatorFilter.add(new Option(o.name, o.id)));
+    }
+
+    async function loadHistory(params = {}) {
+        tableBody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+        const query = new URLSearchParams(params).toString();
+        const runs = await fetchData(`/api/v1/run-history/?${query}`);
+
+        tableBody.innerHTML = '';
         if (runs.length === 0) {
-            historyTableBody.innerHTML = `<tr><td colspan="8" class="text-center">No runs found for the selected criteria.</td></tr>`;
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No runs found for the selected criteria.</td></tr>';
             return;
         }
-        runs.forEach(run => {
-            const row = document.createElement('tr');
-            const target = run.object_profile_snapshot?.target_count || 0;
-            const statusColor = {
-                'Completed': 'bg-success',
-                'Running': 'bg-primary',
-                'Failed': 'bg-danger',
-                'Aborted by User': 'bg-warning text-dark'
-            }[run.status] || 'bg-secondary';
 
+        runs.forEach(run => {
+            const row = tableBody.insertRow();
+            const targetCount = run.object_profile_snapshot?.target_count || 0;
+            
             row.innerHTML = `
                 <td>${new Date(run.start_timestamp).toLocaleString()}</td>
-                <td><span class="badge ${statusColor}">${run.status}</span></td>
-                <td>${run.duration_seconds !== null ? `${run.duration_seconds}s` : 'N/A'}</td>
+                <td><span class="badge bg-${getStatusColor(run.status)}">${run.status}</span></td>
+                <td>${run.duration_seconds !== null ? `${run.duration_seconds}s` : '--'}</td>
                 <td>${run.batch_code}</td>
                 <td>${run.product?.name || 'N/A'}</td>
                 <td>${run.operator?.name || 'N/A'}</td>
-                <td class="text-end">${run.detected_items_count} / ${target === 0 ? '∞' : target}</td>
+                <td class="text-end">${run.detected_items_count} / ${targetCount === 0 ? '∞' : targetCount}</td>
                 <td class="text-end">
-                    <button class="btn btn-sm btn-outline-info view-detections-btn" data-run-id="${run.id}" data-batch-code="${run.batch_code}">
-                        View Images
-                    </button>
+                    <button class="btn btn-sm btn-outline-primary view-detections-btn" data-run-id="${run.id}" data-batch-code="${run.batch_code}">View Detections</button>
                 </td>
             `;
-            historyTableBody.appendChild(row);
         });
-    };
+    }
 
-    historyTableBody.addEventListener('click', (e) => {
-        const viewBtn = e.target.closest('.view-detections-btn');
-        if (viewBtn) {
-            const runId = viewBtn.dataset.runId;
-            const batchCode = viewBtn.dataset.batchCode;
-            openDetectionsModal(runId, batchCode);
+    function getStatusColor(status) {
+        switch (status) {
+            case 'Completed': return 'success';
+            case 'Failed': return 'danger';
+            case 'Aborted by User': return 'warning';
+            case 'Running': return 'info';
+            default: return 'secondary';
+        }
+    }
+
+    async function displayDetections(runId, batchCode) {
+        modalTitle.textContent = `Detection Events for Run #${runId} (${batchCode})`;
+        detectionsContainer.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+        downloadZipBtn.href = `/api/v1/run-history/${runId}/download-images`;
+        detectionsModal.show();
+        
+        const detections = await fetchData(`/api/v1/run-history/${runId}/detections`);
+        detectionsContainer.innerHTML = '';
+        
+        if (detections.length === 0) {
+            detectionsContainer.innerHTML = '<p class="text-center text-muted">No detection events with images were recorded for this run.</p>';
+            return;
+        }
+        
+        detections.forEach(det => {
+            const item = detectionTemplate.content.cloneNode(true);
+            
+            item.querySelector('.serial-number').textContent = det.serial_number;
+            item.querySelector('.timestamp').textContent = new Date(det.timestamp).toLocaleString();
+            item.querySelector('.original-image').src = det.image_path || '/static/images/placeholder.jpg';
+            item.querySelector('.annotated-image').src = det.annotated_image_path || det.image_path || '/static/images/placeholder.jpg';
+            
+            // --- THIS IS THE FIX ---
+            // Populate the text details from the 'results' object
+            const details = {
+                qc: item.querySelector('.details-qc'),
+                category: item.querySelector('.details-category'),
+                size: item.querySelector('.details-size'),
+                defects: item.querySelector('.details-defects'),
+            };
+
+            const idResults = det.results ? det.results.identification_results || {} : {};
+            const qc = idResults.qc;
+            details.qc.textContent = qc ? qc.overall_status : 'N/A';
+            const category = idResults.category;
+            details.category.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+            const size = idResults.size;
+            details.size.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
+            const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
+            details.defects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
+            // --- END OF FIX ---
+
+            detectionsContainer.appendChild(item);
+        });
+    }
+
+    tableBody.addEventListener('click', function (e) {
+        if (e.target && e.target.classList.contains('view-detections-btn')) {
+            const runId = e.target.dataset.runId;
+            const batchCode = e.target.dataset.batchCode;
+            displayDetections(runId, batchCode);
         }
     });
 
-    const openDetectionsModal = async (runId, batchCode) => {
-        modalTitle.textContent = `Detection Events for Run #${runId} (${batchCode})`;
-        modalBodyContent.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
-        downloadZipBtn.href = `/api/v1/run-history/${runId}/download-images`;
-        detectionsModal.show();
-
-        try {
-            const response = await fetch(`/api/v1/run-history/${runId}/detections`);
-            if (!response.ok) throw new Error('Failed to fetch detections.');
-            const detections = await response.json();
-            
-            modalBodyContent.innerHTML = '';
-            if (detections.length === 0) {
-                modalBodyContent.innerHTML = '<p class="text-center">No images were captured for this run.</p>';
-                downloadZipBtn.classList.add('disabled');
-                return;
-            }
-            
-            downloadZipBtn.classList.remove('disabled');
-
-            detections.forEach(det => {
-                const itemHtml = `
-                    <div class="card mb-3">
-                        <div class="card-header small text-muted">
-                            <strong>Serial Number:</strong> ${det.serial_number} | <strong>Timestamp:</strong> ${new Date(det.timestamp).toLocaleString()}
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <h6 class="text-center">Original Image</h6>
-                                    <a href="${det.image_path}" target="_blank">
-                                        <img src="${det.image_path}" class="img-fluid rounded border" alt="Original capture">
-                                    </a>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="text-center">Annotated AI Result</h6>
-                                    ${det.annotated_image_path ? `
-                                        <a href="${det.annotated_image_path}" target="_blank">
-                                            <img src="${det.annotated_image_path}" class="img-fluid rounded border" alt="Annotated result">
-                                        </a>
-                                    ` : `
-                                        <div class="d-flex align-items-center justify-content-center h-100 bg-light-subtle border rounded" style="min-height: 200px;">
-                                            <p class="text-muted">No annotation available.</p>
-                                        </div>
-                                    `}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                modalBodyContent.insertAdjacentHTML('beforeend', itemHtml);
-            });
-
-        } catch (error) {
-            console.error('Error in openDetectionsModal:', error);
-            modalBodyContent.innerHTML = '<p class="text-center text-danger">Failed to load detection images.</p>';
-        }
-    };
-    
-    filterForm.addEventListener('submit', (e) => {
+    filterForm.addEventListener('submit', function (e) {
         e.preventDefault();
         const params = {
             start_date: document.getElementById('filter-start-date').value,
@@ -134,39 +142,17 @@ document.addEventListener('DOMContentLoaded', function () {
             operator_id: document.getElementById('filter-operator').value,
             batch_code: document.getElementById('filter-batch-code').value,
         };
-        Object.keys(params).forEach(key => {
-            if (!params[key]) delete params[key];
-        });
-        fetchRunHistory(params);
+        // Remove empty params
+        Object.keys(params).forEach(key => params[key] === '' && delete params[key]);
+        loadHistory(params);
     });
 
-    resetFilterBtn.addEventListener('click', () => {
+    resetBtn.addEventListener('click', function () {
         filterForm.reset();
-        fetchRunHistory();
+        loadHistory();
     });
 
-    const populateFilters = async () => {
-        try {
-            const [productsRes, operatorsRes] = await Promise.all([
-                fetch('/api/v1/products/'),
-                fetch('/api/v1/operators/')
-            ]);
-            const products = await productsRes.json();
-            const operators = await operatorsRes.json();
-            
-            const productSelect = document.getElementById('filter-product');
-            productSelect.innerHTML = '<option value="">All Products</option>';
-            products.forEach(p => productSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`);
-
-            const operatorSelect = document.getElementById('filter-operator');
-            operatorSelect.innerHTML = '<option value="">All Operators</option>';
-            operators.forEach(o => operatorSelect.innerHTML += `<option value="${o.id}">${o.name}</option>`);
-
-        } catch (error) {
-            console.error("Failed to populate filters:", error);
-        }
-    };
-
-    fetchRunHistory();
+    // Initial Load
     populateFilters();
+    loadHistory();
 });

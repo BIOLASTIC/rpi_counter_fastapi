@@ -13,11 +13,13 @@ class DetectionEventLogOut(BaseModel):
     id: int
     timestamp: datetime
     image_path: Optional[str] = None
-    
-    # --- NEW: Expose new fields to the API ---
     serial_number: str
     annotated_image_path: Optional[str] = None
-    # --- END NEW FIELDS ---
+    
+    # --- THIS IS THE FIX ---
+    # Expose the new 'results' field to the API.
+    results: Optional[Dict[str, Any]] = None
+    # --- END OF FIX ---
 
 class RunLogBase(BaseModel):
     batch_code: str

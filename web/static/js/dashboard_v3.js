@@ -5,27 +5,28 @@ document.addEventListener('DOMContentLoaded', function () {
     const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
     let socket;
 
+    // --- DOM Element Cache ---
     const elements = {
-        // Main Dashboard
+        // Main Dashboard & Animation
         countExited: document.getElementById('count-exited'),
         countOnBelt: document.getElementById('count-on-belt'),
         conveyorMode: document.getElementById('conveyor-mode'),
         conveyorBelt: document.getElementById('conveyor-belt'),
         animationZone: document.getElementById('animation-zone'),
-        // Run Status
+        // Run Status & Details
         progressPath: document.getElementById('progress-path'),
         progressPercentage: document.getElementById('progress-percentage'),
         progressDetails: document.getElementById('progress-details'),
         activeProfileDisplay: document.getElementById('active-profile-display'),
         runDetailBatch: document.getElementById('run-detail-batch'),
         runDetailOperator: document.getElementById('run-detail-operator'),
-        // Camera Feeds
+        // Camera & AI Feeds
         liveCameraFeed: document.getElementById('live-camera-feed'),
-        aiFeedImage: document.getElementById('ai-feed-image'),
-        noAnnotationMessage: document.getElementById('no-annotation-message'),
+        aiFeedCanvas: document.getElementById('ai-feed-canvas'), // <-- CHANGED
+        aiFeedCtx: document.getElementById('ai-feed-canvas').getContext('2d'), // <-- NEW
         liveFeedTitle: document.getElementById('live-feed-title'),
         cameraSwitcher: document.getElementById('camera-switcher'),
-        // AI Details (NEW)
+        // AI Text Summary
         aiDetailsSection: document.getElementById('ai-details-section'),
         aiDetailsQc: document.getElementById('ai-details-qc'),
         aiDetailsCategory: document.getElementById('ai-details-category'),
@@ -59,13 +60,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let lastExitedCount = -1;
     let selectedCameraId = elements.cameraSwitcher?.querySelector('.camera-select-btn')?.dataset.cameraId || 'rpi';
 
+    // --- WebSocket Handling ---
     function connect() {
         socket = new WebSocket(wsUrl);
         socket.onopen = () => console.log("[WebSocket] Connection established.");
-        socket.onclose = (event) => {
-            console.log("[WebSocket] Connection died. Reconnecting in 1 second.", event);
-            setTimeout(connect, 1000);
-        };
+        socket.onclose = (event) => { setTimeout(connect, 1000); };
         socket.onerror = (error) => console.error(`[WebSocket] Error: ${error.message}`);
         socket.onmessage = handleWebSocketMessage;
     }
@@ -79,10 +78,121 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateAiFeed(message.data);
             }
         } catch (e) {
-            console.warn("Received non-JSON message from WebSocket:", event.data);
+            console.warn("Received non-JSON message:", event.data);
         }
     }
+    
+    // --- THIS IS THE NEW, ROBUST AI FEED HANDLER ---
+    function updateAiFeed(data) {
+        if (!data || !data.original_path) return;
+        const { annotated_path, original_path, results } = data;
+        
+        const imageToLoad = (annotated_path && annotated_path !== original_path) ? annotated_path : original_path;
+        
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // Handle potential CORS if ever needed
+        img.onload = () => {
+            // Match canvas size to image aspect ratio
+            const canvas = elements.aiFeedCanvas;
+            const ctx = elements.aiFeedCtx;
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientWidth / aspectRatio;
 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            if (results) {
+                drawAnnotations(results, canvas.width / img.naturalWidth);
+                updateAiDetails(results);
+            } else {
+                // Draw "No Annotation" text directly on canvas
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No Annotation Available', canvas.width / 2, canvas.height / 2);
+                elements.aiDetailsSection.style.display = 'none';
+            }
+        };
+        img.src = `${imageToLoad}?t=${new Date().getTime()}`; // Cache buster
+    }
+
+    // --- NEW: Annotation drawing logic ported from qc_testing.js ---
+    function drawAnnotations(results, scale) {
+        const idResults = results.identification_results;
+        if (!idResults) return;
+        const ctx = elements.aiFeedCtx;
+
+        const drawBoundingBox = (boxData, label, color, thickness, labelInside = false) => {
+            if (!boxData) return;
+            const x = boxData.x * scale;
+            const y = boxData.y * scale;
+            const w = boxData.width * scale;
+            const h = boxData.height * scale;
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness;
+            ctx.strokeRect(x, y, w, h);
+
+            const fontScale = 1.0;
+            const font = `bold ${16 * fontScale}px sans-serif`;
+            ctx.font = font;
+            const textMetrics = ctx.measureText(label);
+            const textWidth = textMetrics.width;
+            const textHeight = 16 * fontScale;
+
+            if (labelInside) {
+                const textY = y + textHeight + 5;
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, textWidth + 10, textHeight + 10);
+                ctx.fillStyle = 'white';
+                ctx.fillText(label, x + 5, textY);
+            } else {
+                const textY = y - 5;
+                const bgY = y - textHeight - 10;
+                ctx.fillStyle = color;
+                ctx.fillRect(x, bgY, textWidth + 10, textHeight + 10);
+                ctx.fillStyle = 'white';
+                ctx.fillText(label, x + 5, textY);
+            }
+        };
+
+        const qcCheck = idResults.qc;
+        if (qcCheck && qcCheck.overall_status) {
+            drawBoundingBox(qcCheck.bounding_box, `Status: ${qcCheck.overall_status}`, qcCheck.overall_status === 'ACCEPT' ? 'lime' : 'red', 5, true);
+        }
+        const categoryCheck = idResults.category;
+        if (categoryCheck && categoryCheck.detected_product_type) {
+            drawBoundingBox(categoryCheck.bounding_box, `Type: ${categoryCheck.detected_product_type}`, 'blue', 3, false);
+        }
+        const defects = (idResults.defects && idResults.defects.defects) ? idResults.defects.defects : [];
+        defects.forEach(defect => {
+            drawBoundingBox(defect.bounding_box, `Defect: ${defect.defect_type}`, 'yellow', 2, false);
+        });
+    }
+
+    // --- NEW: Update text summary section ---
+    function updateAiDetails(results) {
+        if (!results) {
+            elements.aiDetailsSection.style.display = 'none';
+            return;
+        }
+        const idResults = results.identification_results || {};
+        const qc = idResults.qc;
+        elements.aiDetailsQc.textContent = qc ? qc.overall_status : 'N/A';
+        elements.aiDetailsQc.className = qc ? `detail-value status-${qc.overall_status.toLowerCase()}` : 'detail-value';
+        const category = idResults.category;
+        elements.aiDetailsCategory.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
+        const size = idResults.size;
+        elements.aiDetailsSize.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
+        const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
+        elements.aiDetailsDefects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
+        elements.aiDetailsSection.style.display = 'block';
+    }
+
+    // --- All other existing functions remain unchanged ---
     function updateDashboard(data) {
         const { system, orchestration } = data;
         elements.countExited.textContent = orchestration.run_progress;
@@ -99,48 +209,7 @@ document.addEventListener('DOMContentLoaded', function () {
         updateAlarm(orchestration.active_alarm_message);
         updateSystemToggles(system);
     }
-
-    function updateAiFeed(data) {
-        if (!data || !data.original_path) return;
-        const { annotated_path, original_path, results } = data;
-        const hasAnnotation = annotated_path !== original_path;
-        const cacheBuster = `?t=${new Date().getTime()}`;
-
-        elements.aiFeedImage.src = hasAnnotation ? `${annotated_path}${cacheBuster}` : `${original_path}${cacheBuster}`;
-        elements.noAnnotationMessage.style.display = hasAnnotation ? 'none' : 'flex';
-        updateAiDetails(results, hasAnnotation);
-    }
-
-    function updateAiDetails(results, hasAnnotation) {
-        if (!hasAnnotation || !results) {
-            elements.aiDetailsSection.style.display = 'none';
-            return;
-        }
-
-        const idResults = results.identification_results || {};
-        
-        const qc = idResults.qc;
-        if (qc && qc.overall_status) {
-            elements.aiDetailsQc.textContent = qc.overall_status;
-            elements.aiDetailsQc.className = `detail-value status-${qc.overall_status.toLowerCase()}`;
-        } else {
-            elements.aiDetailsQc.textContent = 'N/A';
-            elements.aiDetailsQc.className = 'detail-value';
-        }
-
-        const category = idResults.category;
-        elements.aiDetailsCategory.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
-        
-        const size = idResults.size;
-        elements.aiDetailsSize.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
-        
-        const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
-        elements.aiDetailsDefects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
-
-        elements.aiDetailsSection.style.display = 'block';
-    }
-
-
+    
     function triggerBoxAnimation() {
         const box = document.createElement('div');
         box.className = 'box';
