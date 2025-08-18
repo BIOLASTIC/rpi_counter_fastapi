@@ -19,6 +19,10 @@ from app.services.orchestration_service import AsyncOrchestrationService, Operat
 from app.models.detection import DetectionEventLog
 from config import settings
 
+# --- THIS IS THE FIX (Part 1) ---
+# Define the project root at the top of the file for reliable path construction.
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 class QcApiService:
     """A client to interact with the external QC API System."""
     def __init__(self, base_url: str):
@@ -35,6 +39,7 @@ class QcApiService:
         params = [("checks_to_perform", check) for check in checks]
         
         try:
+            print(f"Attempting to open file for AI upload: {image_path}")
             with open(image_path, "rb") as f:
                 files = {"image": (Path(image_path).name, f, "image/jpeg")}
                 data = {"serial_number": serial_number}
@@ -44,6 +49,9 @@ class QcApiService:
                 response.raise_for_status()
                 print("QC API Response: Success")
                 return response.json()
+        except FileNotFoundError:
+            print(f"FATAL FILE ERROR: The image file was not found at the path: {image_path}. Cannot send to AI.")
+            return None
         except httpx.RequestError as e:
             print(f"FATAL ERROR: Could not connect to QC API at {e.request.url}.")
             return None
@@ -163,6 +171,7 @@ class AsyncDetectionService:
             save_path = str(annotated_dir / original_path_obj.name)
             cv2.imwrite(save_path, image)
             return f"/captures/{original_path_obj.parts[-2]}/annotated/{original_path_obj.name}"
+
         except Exception as e:
             print(f"FATAL ERROR during image annotation: {e}")
             return image_path
@@ -178,7 +187,10 @@ class AsyncDetectionService:
             if product.verify_defects: checks.append("defects")
             if product.verify_ticks: checks.append("ticks")
 
-        full_image_path = str(Path(settings.CAMERA_CAPTURES_DIR).parent.parent / image_path.lstrip('/'))
+        # --- THIS IS THE FIX (Part 2) ---
+        # Construct the full, absolute path reliably from the project root.
+        full_image_path = str(PROJECT_ROOT / image_path.lstrip('/'))
+        
         qc_results = await self._qc_api_service.perform_inspection(image_path=full_image_path, serial_number=serial_number, checks=checks)
         
         annotated_path = image_path 
@@ -189,9 +201,6 @@ class AsyncDetectionService:
             async with self._get_db_session() as session:
                 log_entry = await session.get(DetectionEventLog, detection_log_id)
                 if log_entry:
-                    # --- THIS IS THE DEFINITIVE FIX ---
-                    # Always save the 'annotated_path' that was returned from the annotation function.
-                    # The flawed conditional logic has been removed.
                     log_entry.annotated_image_path = annotated_path
                     log_entry.results = qc_results
                     await session.commit()

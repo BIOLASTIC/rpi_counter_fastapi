@@ -22,8 +22,8 @@ document.addEventListener('DOMContentLoaded', function () {
         runDetailOperator: document.getElementById('run-detail-operator'),
         // Camera & AI Feeds
         liveCameraFeed: document.getElementById('live-camera-feed'),
-        aiFeedCanvas: document.getElementById('ai-feed-canvas'), // <-- CHANGED
-        aiFeedCtx: document.getElementById('ai-feed-canvas').getContext('2d'), // <-- NEW
+        aiFeedCanvas: document.getElementById('ai-feed-canvas'),
+        aiFeedCtx: document.getElementById('ai-feed-canvas').getContext('2d'),
         liveFeedTitle: document.getElementById('live-feed-title'),
         cameraSwitcher: document.getElementById('camera-switcher'),
         // AI Text Summary
@@ -82,17 +82,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
     
-    // --- THIS IS THE NEW, ROBUST AI FEED HANDLER ---
     function updateAiFeed(data) {
         if (!data || !data.original_path) return;
         const { annotated_path, original_path, results } = data;
         
+        // Always load the annotated path if it's different, otherwise the original.
         const imageToLoad = (annotated_path && annotated_path !== original_path) ? annotated_path : original_path;
         
         const img = new Image();
-        img.crossOrigin = "anonymous"; // Handle potential CORS if ever needed
+        img.crossOrigin = "anonymous";
         img.onload = () => {
-            // Match canvas size to image aspect ratio
             const canvas = elements.aiFeedCanvas;
             const ctx = elements.aiFeedCtx;
             const aspectRatio = img.naturalWidth / img.naturalHeight;
@@ -101,79 +100,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            updateAiDetails(results);
 
-            if (results) {
-                drawAnnotations(results, canvas.width / img.naturalWidth);
-                updateAiDetails(results);
-            } else {
-                // Draw "No Annotation" text directly on canvas
+            // If the paths are the same, it means no annotation was created, so show the message.
+            if (annotated_path === original_path) {
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.fillStyle = 'white';
                 ctx.font = 'bold 24px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('No Annotation Available', canvas.width / 2, canvas.height / 2);
-                elements.aiDetailsSection.style.display = 'none';
             }
         };
-        img.src = `${imageToLoad}?t=${new Date().getTime()}`; // Cache buster
+        img.src = `${imageToLoad}?t=${new Date().getTime()}`;
     }
 
-    // --- NEW: Annotation drawing logic ported from qc_testing.js ---
-    function drawAnnotations(results, scale) {
-        const idResults = results.identification_results;
-        if (!idResults) return;
-        const ctx = elements.aiFeedCtx;
-
-        const drawBoundingBox = (boxData, label, color, thickness, labelInside = false) => {
-            if (!boxData) return;
-            const x = boxData.x * scale;
-            const y = boxData.y * scale;
-            const w = boxData.width * scale;
-            const h = boxData.height * scale;
-            
-            ctx.strokeStyle = color;
-            ctx.lineWidth = thickness;
-            ctx.strokeRect(x, y, w, h);
-
-            const fontScale = 1.0;
-            const font = `bold ${16 * fontScale}px sans-serif`;
-            ctx.font = font;
-            const textMetrics = ctx.measureText(label);
-            const textWidth = textMetrics.width;
-            const textHeight = 16 * fontScale;
-
-            if (labelInside) {
-                const textY = y + textHeight + 5;
-                ctx.fillStyle = color;
-                ctx.fillRect(x, y, textWidth + 10, textHeight + 10);
-                ctx.fillStyle = 'white';
-                ctx.fillText(label, x + 5, textY);
-            } else {
-                const textY = y - 5;
-                const bgY = y - textHeight - 10;
-                ctx.fillStyle = color;
-                ctx.fillRect(x, bgY, textWidth + 10, textHeight + 10);
-                ctx.fillStyle = 'white';
-                ctx.fillText(label, x + 5, textY);
-            }
-        };
-
-        const qcCheck = idResults.qc;
-        if (qcCheck && qcCheck.overall_status) {
-            drawBoundingBox(qcCheck.bounding_box, `Status: ${qcCheck.overall_status}`, qcCheck.overall_status === 'ACCEPT' ? 'lime' : 'red', 5, true);
-        }
-        const categoryCheck = idResults.category;
-        if (categoryCheck && categoryCheck.detected_product_type) {
-            drawBoundingBox(categoryCheck.bounding_box, `Type: ${categoryCheck.detected_product_type}`, 'blue', 3, false);
-        }
-        const defects = (idResults.defects && idResults.defects.defects) ? idResults.defects.defects : [];
-        defects.forEach(defect => {
-            drawBoundingBox(defect.bounding_box, `Defect: ${defect.defect_type}`, 'yellow', 2, false);
-        });
-    }
-
-    // --- NEW: Update text summary section ---
     function updateAiDetails(results) {
         if (!results) {
             elements.aiDetailsSection.style.display = 'none';
