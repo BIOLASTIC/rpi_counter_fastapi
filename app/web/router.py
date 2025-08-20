@@ -127,3 +127,8 @@ async def read_api_docs_page(request: Request):
     openapi_schema = request.app.openapi()
     context = {"request": request, "api_title": openapi_schema.get("info", {}).get("title", "API"), "api_version": openapi_schema.get("info", {}).get("version", ""), "api_paths": openapi_schema.get("paths", {})}
     return NoCacheTemplateResponse(request, "api.html", context)
+
+@router.get("/analytics", response_class=HTMLResponse)
+async def read_analytics_page(request: Request):
+    """Serves the analytics dashboard page."""
+    return NoCacheTemplateResponse(request, "analytics.html", {"request": request})    
