@@ -1,4 +1,4 @@
-# rpi_counter_fastapi-dev2/main.py
+# rpi_counter_fastapi-apintrigation/main.py
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -26,6 +26,7 @@ from app.services.detection_service import AsyncDetectionService
 from app.services.system_service import AsyncSystemService
 from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
+from app.services.audio_service import AsyncAudioService # <-- ADD THIS IMPORT
 from app.websocket.connection_manager import manager as websocket_manager
 
 class NoCacheStaticFiles(StaticFiles):
@@ -46,12 +47,15 @@ async def lifespan(app: FastAPI):
     
     app.state.redis_client = redis.from_url("redis://localhost")
 
+    # --- SERVICE INITIALIZATION (WITH NEW AUDIO SERVICE) ---
+    app.state.audio_service = AsyncAudioService(db_session_factory=AsyncSessionFactory) # <-- INITIALIZE AUDIO SERVICE
     app.state.modbus_controller = await AsyncModbusController.get_instance()
     app.state.orchestration_service = AsyncOrchestrationService(
         modbus_controller=app.state.modbus_controller,
         db_session_factory=AsyncSessionFactory,
         redis_client=app.state.redis_client,
-        app_settings=settings
+        app_settings=settings,
+        audio_service=app.state.audio_service # <-- INJECT AUDIO SERVICE
     )
     app.state.notification_service = AsyncNotificationService(db_session_factory=AsyncSessionFactory)
     app.state.camera_manager = AsyncCameraManager(
@@ -67,7 +71,8 @@ async def lifespan(app: FastAPI):
         redis_client=app.state.redis_client,
         conveyor_settings=settings.CONVEYOR,
         db_session_factory=AsyncSessionFactory,
-        active_camera_ids=ACTIVE_CAMERA_IDS
+        active_camera_ids=ACTIVE_CAMERA_IDS,
+        audio_service=app.state.audio_service # <-- INJECT AUDIO SERVICE
     )
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
@@ -106,7 +111,6 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(5)
 
     async def qc_image_broadcaster():
-        # Note: We don't set decode_responses=True here because the payload might be complex JSON
         pubsub_client = redis.from_url("redis://localhost")
         pubsub = pubsub_client.pubsub()
         await pubsub.subscribe("qc_annotated_image:new")
@@ -115,11 +119,8 @@ async def lifespan(app: FastAPI):
             try:
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
                 if message and message.get("type") == "message":
-                    # The message data is now a JSON string in bytes
                     payload_str = message['data'].decode('utf-8')
-                    # We parse it into a dictionary
                     image_data = json.loads(payload_str)
-                    # We then wrap this dictionary in our WebSocket message structure
                     payload = {"type": "qc_update", "data": image_data}
                     await websocket_manager.broadcast_json(payload)
                     print(f"QC Image Broadcaster: Sent new image data to UI: {image_data}")
@@ -135,6 +136,8 @@ async def lifespan(app: FastAPI):
     app.state.qc_broadcast_task = asyncio.create_task(qc_image_broadcaster())
     
     await app.state.notification_service.send_alert("INFO", "Application startup complete.")
+    # <-- PLAY STARTUP SOUND -->
+    await app.state.audio_service.play_sound_for_event("startup_complete")
     print("--- Application startup complete. Server is online. ---")
 
     yield

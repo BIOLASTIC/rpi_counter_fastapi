@@ -43,18 +43,32 @@
                                 </table>
                             {% endif %}
                             
+                            <!-- THIS IS THE CORRECTED LOGIC BLOCK -->
                             {% if details.requestBody %}
                                 <h6>Request Body</h6>
-                                <pre class="bg-dark text-light p-3 rounded"><code>{% set content_schema = details.requestBody.content['application/json'].schema %}
-{% if content_schema['$ref'] -%}
+                                <pre class="bg-dark text-light p-3 rounded"><code>
+{%- if 'application/json' in details.requestBody.content -%}
+{%- set content_schema = details.requestBody.content['application/json'].schema -%}
+{%- if content_schema['$ref'] -%}
 {
     // See schema: {{ content_schema['$ref'] }}
 }
-{% else -%}
+{%- else -%}
 {{ { "example": content_schema.get("example", "No example available") } | tojson(indent=4) }}
-{% endif -%}
+{%- endif -%}
+{%- elif 'multipart/form-data' in details.requestBody.content -%}
+{
+    "content_type": "multipart/form-data",
+    "description": "This endpoint accepts form data, likely for file uploads."
+}
+{%- else -%}
+{
+    "description": "Request body details not available for this content type."
+}
+{%- endif -%}
 </code></pre>
                             {% endif %}
+                            <!-- END OF CORRECTION -->
 
                         </div>
                         {% if not loop.last %}<hr>{% endif %}

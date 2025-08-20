@@ -1,4 +1,4 @@
-# rpi_counter_fastapi-dev2/app/web/router.py
+# rpi_counter_fastapi-apintrigation/web/router.py
 
 """
 Web routes for serving HTML pages.
@@ -14,10 +14,9 @@ from app.models import get_async_session, EventLog, ObjectProfile
 from config import settings, ACTIVE_CAMERA_IDS
 
 router = APIRouter(tags=["Web Dashboard"])
-PROJECT_ROOT = Path(__file__).parent.parent.parent # Define project root
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 def NoCacheTemplateResponse(request: Request, name: str, context: dict):
-    """A helper that adds no-cache headers and injects global context."""
     templates = request.app.state.templates
     context['active_camera_ids'] = ACTIVE_CAMERA_IDS
     context['camera_profiles'] = getattr(request.app.state, 'camera_profiles', [])
@@ -47,6 +46,13 @@ async def read_products_page(request: Request):
 async def read_operators_page(request: Request):
     return NoCacheTemplateResponse(request, "operators.html", {"request": request})
 
+# <-- ADD NEW ROUTE FOR AUDIO SETTINGS -->
+@router.get("/settings/audio", response_class=HTMLResponse)
+async def read_audio_settings_page(request: Request):
+    """Serves the Audio Settings page."""
+    return NoCacheTemplateResponse(request, "audio_settings.html", {"request": request})
+# <-- END OF NEW ROUTE -->
+
 @router.get("/status", response_class=HTMLResponse)
 async def read_status_page(request: Request):
     return NoCacheTemplateResponse(request, "status.html", {"request": request})
@@ -59,37 +65,20 @@ async def read_hardware_page(request: Request):
 async def read_run_history_page(request: Request):
     return NoCacheTemplateResponse(request, "run_history.html", {"request": request})
 
-# --- NEW ROUTE FOR QC TESTING PAGE ---
 @router.get("/qc-testing", response_class=HTMLResponse)
 async def read_qc_testing_page(request: Request):
-    """Serves the manual QC API testing page."""
     return NoCacheTemplateResponse(request, "qc_testing.html", {"request": request})
-# --- END NEW ROUTE ---
 
 @router.get("/help/{page_name}", response_class=HTMLResponse)
 async def read_help_page(request: Request, page_name: str):
-    """
-    Reads a markdown file from the docs/manuals directory, converts it to HTML,
-    and renders it in a template.
-    """
-    # Sanitize page_name to prevent directory traversal attacks
     if ".." in page_name or "/" in page_name:
         raise HTTPException(status_code=404, detail="Help page not found.")
-
     file_path = PROJECT_ROOT / "docs" / "manuals" / f"{page_name}.md"
-    
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Help page not found.")
-        
-    # Read markdown content
     markdown_text = file_path.read_text()
-    
-    # Convert to HTML
     html_content = markdown2.markdown(markdown_text, extras=["fenced-code-blocks", "tables", "admonitions"])
-    
-    # Capitalize the title for display
     title = page_name.replace("_", " ").capitalize()
-    
     context = {"request": request, "title": title, "content": html_content}
     return NoCacheTemplateResponse(request, "help.html", context)
 
@@ -130,5 +119,4 @@ async def read_api_docs_page(request: Request):
 
 @router.get("/analytics", response_class=HTMLResponse)
 async def read_analytics_page(request: Request):
-    """Serves the analytics dashboard page."""
-    return NoCacheTemplateResponse(request, "analytics.html", {"request": request})    
+    return NoCacheTemplateResponse(request, "analytics.html", {"request": request})

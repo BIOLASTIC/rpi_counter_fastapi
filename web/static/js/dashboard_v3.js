@@ -1,281 +1,356 @@
 // rpi_counter_fastapi-apintrigation/web/static/js/dashboard_v3.js
 
 document.addEventListener('DOMContentLoaded', function () {
-    // WebSocket
-    let socket;
-    let currentCameraId = null;
+    // --- STATE MANAGEMENT ---
+    let countdownInterval = null; // Holds the interval ID for the batch pause timer
+    let activeCameraId = null;
 
-    // Element Cache
-    const elements = {
-        countOnBelt: document.getElementById('count-on-belt'),
-        countExited: document.getElementById('count-exited'),
-        conveyorMode: document.getElementById('conveyor-mode'),
-        conveyorBelt: document.getElementById('conveyor-belt'),
-        animationZone: document.getElementById('animation-zone'),
-        startRunBtn: document.getElementById('start-run-btn'),
-        stopRunBtn: document.getElementById('stop-run-btn'),
-        resetAllBtn: document.getElementById('reset-all-btn'),
-        profileSelect: document.getElementById('object-profile-select'),
-        targetCountInput: document.getElementById('target-count-input'),
-        postBatchDelayInput: document.getElementById('post-batch-delay-input'),
-        preRunModal: new bootstrap.Modal(document.getElementById('pre-run-modal')),
-        operatorSelect: document.getElementById('operator-select'),
-        batchCodeInput: document.getElementById('batch-code-input'),
-        reviewRunBtn: document.getElementById('review-run-btn'),
-        goBackBtn: document.getElementById('go-back-btn'),
-        startFinalRunBtn: document.getElementById('start-final-run-btn'),
-        preRunInputView: document.getElementById('pre-run-input-view'),
-        preRunConfirmView: document.getElementById('pre-run-confirm-view'),
-        confirmOperator: document.getElementById('confirm-operator'),
-        confirmBatchCode: document.getElementById('confirm-batch-code'),
-        confirmRecipe: document.getElementById('confirm-recipe'),
-        confirmTarget: document.getElementById('confirm-target'),
-        progressPath: document.getElementById('progress-path'),
-        progressPercentage: document.getElementById('progress-percentage'),
-        progressDetails: document.getElementById('progress-details'),
-        activeProfileDisplay: document.getElementById('active-profile-display'),
-        runDetailBatch: document.getElementById('run-detail-batch'),
-        runDetailOperator: document.getElementById('run-detail-operator'),
-        runAlarmBlock: document.getElementById('run-alarm-block'),
-        runAlarmMessage: document.getElementById('run-alarm-message'),
-        acknowledgeAlarmBtn: document.getElementById('acknowledge-alarm-btn'),
-        liveCameraFeed: document.getElementById('live-camera-feed'),
-        aiFeedCanvas: document.getElementById('ai-feed-canvas'),
-        aiDetailsSection: document.getElementById('ai-details-section'),
-        aiDetailsQcStatus: document.getElementById('ai-details-qc-status'),
-        aiDetailsQcConfidence: document.getElementById('ai-details-qc-confidence'),
-        aiDetailsCategoryName: document.getElementById('ai-details-category-name'),
-        aiDetailsCategoryConfidence: document.getElementById('ai-details-category-confidence'),
-        aiValidationList: document.getElementById('ai-validation-list'),
-        cameraSwitcher: document.getElementById('camera-switcher'),
-        liveFeedTitle: document.getElementById('live-feed-title'),
-        manualControlToggles: document.querySelectorAll('.manual-control-toggle input'),
-    };
+    // --- DOM ELEMENT SELECTORS ---
+    // Status Displays
+    const countOnBeltEl = document.getElementById('count-on-belt');
+    const countExitedEl = document.getElementById('count-exited');
+    const conveyorModeEl = document.getElementById('conveyor-mode');
+    const conveyorBeltEl = document.getElementById('conveyor-belt');
+    const progressPath = document.getElementById('progress-path');
+    const progressPercentageEl = document.getElementById('progress-percentage');
+    const progressDetailsEl = document.getElementById('progress-details');
+    const activeProfileDisplay = document.getElementById('active-profile-display');
+    const runDetailBatch = document.getElementById('run-detail-batch');
+    const runDetailOperator = document.getElementById('run-detail-operator');
 
-    const aiFeedCtx = elements.aiFeedCanvas.getContext('2d');
-    let aiFeedImage = new Image();
+    // Alarm & Countdown Blocks
+    const alarmBlock = document.getElementById('run-alarm-block');
+    const alarmMessageEl = document.getElementById('run-alarm-message');
+    const countdownCard = document.getElementById('countdown-timer-card');
+    const countdownTimerEl = document.getElementById('countdown-timer');
 
-    // Helper to safely access nested properties
-    const get = (path, obj) => path.reduce((xs, x) => (xs && xs[x] != null) ? xs[x] : null, obj);
+    // Control Buttons
+    const startRunBtn = document.getElementById('start-run-btn');
+    const stopRunBtn = document.getElementById('stop-run-btn');
+    const resetAllBtn = document.getElementById('reset-all-btn');
+    const acknowledgeAlarmBtn = document.getElementById('acknowledge-alarm-btn');
 
-    // Maps the control name from the data-attribute to the key in the system status JSON
-    const controlNameToStatusKey = {
-        'conveyor': 'conveyor_relay_status',
-        'gate': 'gate_relay_status',
-        'diverter': 'diverter_relay_status',
-        'camera_light': 'camera_light_status',
-        'buzzer': 'buzzer_status'
-    };
+    // Form Inputs
+    const profileSelect = document.getElementById('object-profile-select');
+    const targetCountInput = document.getElementById('target-count-input');
+    const postBatchDelayInput = document.getElementById('post-batch-delay-input');
 
-    function initWebSocket() {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-        socket = new WebSocket(wsUrl);
-        socket.onopen = () => console.log("[WebSocket] Connection established.");
-        socket.onclose = () => console.error('[WebSocket] Connection died.');
-        socket.onerror = (error) => console.error(`[WebSocket] Error: ${error.message}`);
-        socket.onmessage = handleWebSocketMessage;
-    }
+    // Pre-Run Modal Elements
+    const preRunModal = new bootstrap.Modal(document.getElementById('pre-run-modal'));
+    const operatorSelect = document.getElementById('operator-select');
+    const batchCodeInput = document.getElementById('batch-code-input');
+    const reviewRunBtn = document.getElementById('review-run-btn');
+    const goBackBtn = document.getElementById('go-back-btn');
+    const startFinalRunBtn = document.getElementById('start-final-run-btn');
+    const inputView = document.getElementById('pre-run-input-view');
+    const confirmView = document.getElementById('pre-run-confirm-view');
 
-    function handleWebSocketMessage(event) {
-        const data = JSON.parse(event.data);
-        if (data.type === 'full_status') {
-            updateDashboard(data.data);
-        } else if (data.type === 'qc_update') {
-            const qcData = data.data;
-            aiFeedImage.src = qcData.annotated_path + '?t=' + new Date().getTime();
-            
-            const results = qcData.results;
-            if (results) {
-                const qcSummary = results.qc_summary || {};
-                const qcStatus = qcSummary.overall_status || '--';
-                elements.aiDetailsQcStatus.textContent = qcStatus;
-                elements.aiDetailsQcStatus.className = `detail-value status-${qcStatus}`;
-                elements.aiDetailsQcConfidence.textContent = qcSummary.confidence ? `${(qcSummary.confidence * 100).toFixed(1)}%` : '--';
+    // Camera & AI Elements
+    const cameraSwitcher = document.getElementById('camera-switcher');
+    const liveCameraFeed = document.getElementById('live-camera-feed');
+    const liveFeedTitle = document.getElementById('live-feed-title');
+    const aiFeedCanvas = document.getElementById('ai-feed-canvas');
+    const aiDetailsSection = document.getElementById('ai-details-section');
+    const aiDetailsQCStatus = document.getElementById('ai-details-qc-status');
+    const aiDetailsQCConfidence = document.getElementById('ai-details-qc-confidence');
+    const aiDetailsCategoryName = document.getElementById('ai-details-category-name');
+    const aiDetailsCategoryConfidence = document.getElementById('ai-details-category-confidence');
+    const aiValidationList = document.getElementById('ai-validation-list');
 
-                const catSummary = results.category_summary || {};
-                elements.aiDetailsCategoryName.textContent = catSummary.detected_type || '--';
-                elements.aiDetailsCategoryConfidence.textContent = catSummary.confidence ? `${(catSummary.confidence * 100).toFixed(1)}%` : '--';
 
-                const validation = results.validation_results || {};
-                elements.aiValidationList.innerHTML = '';
-                if (validation.checks && validation.checks.length > 0) {
-                    validation.checks.forEach(check => {
-                        const isPass = check.status === 'PASS';
-                        const icon = isPass ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-danger"></i>';
-                        const listItem = `<li class="list-group-item d-flex justify-content-between align-items-center small"><div>${icon} ${check.check_type}</div><span class="badge ${isPass ? 'bg-success' : 'bg-danger'}">${check.value}</span></li>`;
-                        elements.aiValidationList.insertAdjacentHTML('beforeend', listItem);
-                    });
-                } else {
-                    elements.aiValidationList.innerHTML = '<li class="list-group-item small text-muted">No geometric checks configured.</li>';
-                }
-                elements.aiDetailsSection.style.display = 'block';
-            }
-        }
-    }
-
-    function updateDashboard(data) {
-        const { system, orchestration } = data;
-        
-        elements.countOnBelt.textContent = system.in_flight_count;
-        elements.countExited.textContent = orchestration.run_progress;
-        elements.conveyorMode.textContent = orchestration.mode;
-        elements.conveyorBelt.classList.toggle('running', orchestration.mode === 'Running');
-
-        updateProgressCircle(orchestration.run_progress, orchestration.target_count);
-        
-        elements.activeProfileDisplay.textContent = orchestration.active_profile || 'None';
-        elements.runDetailBatch.textContent = orchestration.batch_code || 'N/A';
-        elements.runDetailOperator.textContent = orchestration.operator_name || 'N/A';
-
-        if (orchestration.active_alarm_message) {
-            elements.runAlarmMessage.textContent = orchestration.active_alarm_message;
-            elements.runAlarmBlock.style.display = 'flex';
-        } else {
-            elements.runAlarmBlock.style.display = 'none';
-        }
-
-        // --- THIS IS THE FIX: Update manual control toggles from WebSocket data ---
-        elements.manualControlToggles.forEach(toggle => {
-            const controlName = toggle.dataset.controlName;
-            const statusKey = controlNameToStatusKey[controlName];
-            if (statusKey && system.hasOwnProperty(statusKey)) {
-                const isChecked = system[statusKey];
-                // Only update the DOM if the state is different to avoid flicker and fighting user input
-                if (toggle.checked !== isChecked) {
-                    toggle.checked = isChecked;
-                }
-            }
-        });
-        // --- END OF FIX ---
-    }
-
-    function updateProgressCircle(current, target) {
-        const percentage = (target > 0) ? Math.min(100, (current / target) * 100) : 0;
-        elements.progressPercentage.textContent = `${Math.floor(percentage)}%`;
-        elements.progressDetails.textContent = `${current} / ${target > 0 ? target : '∞'}`;
-        const circumference = 2 * Math.PI * 45;
-        const offset = circumference - (percentage / 100) * circumference;
-        elements.progressPath.style.strokeDasharray = `${circumference} ${circumference}`;
-        elements.progressPath.style.strokeDashoffset = offset;
-    }
-    
-    async function populateOperatorSelect() {
+    // --- UTILITY FUNCTIONS ---
+    async function postAPI(endpoint, body) {
         try {
-            const response = await fetch('/api/v1/operators/');
-            const operators = await response.json();
-            elements.operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>';
-            operators.filter(o => o.status === 'Active').forEach(op => {
-                elements.operatorSelect.insertAdjacentHTML('beforeend', `<option value="${op.id}">${op.name}</option>`);
-            });
-        } catch (error) {
-            console.error("Failed to load operators:", error);
-        }
-    }
-
-    async function sendPostRequest(url, body) {
-        try {
-            const response = await fetch(url, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: body ? JSON.stringify(body) : null
+                body: JSON.stringify(body)
             });
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP Error ${response.status}`);
+                throw new Error(errorData.detail || 'API request failed');
             }
             return await response.json();
         } catch (error) {
+            console.error(`Error posting to ${endpoint}:`, error);
             alert(`Error: ${error.message}`);
-            console.error(error);
         }
     }
-    
-    // --- ALL EVENT LISTENERS ---
-    elements.startRunBtn.addEventListener('click', () => {
-        if (!elements.profileSelect.value) {
-            alert('Please select an Object Profile (Recipe) first.');
-            return;
-        }
-        elements.preRunInputView.style.display = 'block';
-        elements.preRunConfirmView.style.display = 'none';
-        populateOperatorSelect();
-        elements.preRunModal.show();
-    });
 
-    elements.reviewRunBtn.addEventListener('click', () => {
-        if (!elements.operatorSelect.value || !elements.batchCodeInput.value) {
-            alert('Please select an operator and enter a batch code.');
-            return;
-        }
-        elements.confirmOperator.textContent = elements.operatorSelect.options[elements.operatorSelect.selectedIndex].text;
-        elements.confirmBatchCode.textContent = elements.batchCodeInput.value;
-        elements.confirmRecipe.textContent = elements.profileSelect.options[elements.profileSelect.selectedIndex].text;
-        const target = elements.targetCountInput.value;
-        elements.confirmTarget.textContent = target === '0' ? 'Continuous' : target;
-        elements.preRunInputView.style.display = 'none';
-        elements.preRunConfirmView.style.display = 'block';
-    });
+    // --- INITIALIZATION ---
+    function initialize() {
+        setupWebSocket();
+        loadInitialData();
+        attachEventListeners();
+        setupCameraSwitcher();
+    }
 
-    elements.goBackBtn.addEventListener('click', () => {
-        elements.preRunInputView.style.display = 'block';
-        elements.preRunConfirmView.style.display = 'none';
-    });
-    
-    elements.startFinalRunBtn.addEventListener('click', async () => {
-        const payload = {
-            object_profile_id: parseInt(elements.profileSelect.value, 10),
-            target_count: parseInt(elements.targetCountInput.value, 10),
-            post_batch_delay_sec: parseInt(elements.postBatchDelayInput.value, 10),
-            batch_code: elements.batchCodeInput.value,
-            operator_id: parseInt(elements.operatorSelect.value, 10),
+    async function loadInitialData() {
+        try {
+            const [operatorsRes, profilesRes] = await Promise.all([
+                fetch('/api/v1/operators/'),
+                fetch('/api/v1/profiles/object') // Assuming this is the correct endpoint
+            ]);
+            
+            const operators = await operatorsRes.json();
+            operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>';
+            operators.forEach(op => {
+                if (op.status === 'Active') {
+                    const option = new Option(op.name, op.id);
+                    operatorSelect.appendChild(option);
+                }
+            });
+
+            // The object profiles are already loaded via the HTML template, so no need to fetch again.
+        } catch (error) {
+            console.error("Failed to load initial data:", error);
+        }
+    }
+
+    function setupCameraSwitcher() {
+        const buttons = cameraSwitcher.querySelectorAll('.camera-select-btn');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const camId = btn.dataset.cameraId;
+                setActiveCamera(camId);
+                buttons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // Activate the first camera by default
+        if (buttons.length > 0) {
+            buttons[0].click();
+        }
+    }
+
+    function setActiveCamera(camId) {
+        activeCameraId = camId;
+        liveCameraFeed.src = `/api/v1/camera/stream/${camId}`;
+        liveFeedTitle.textContent = `LIVE - ${camId.toUpperCase()}`;
+    }
+
+    // --- WEBSOCKET HANDLING ---
+    function setupWebSocket() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => console.log("[WebSocket] Connection established.");
+        socket.onclose = () => {
+            console.error("[WebSocket] Connection died. Attempting to reconnect in 3 seconds...");
+            setTimeout(setupWebSocket, 3000);
         };
-        await sendPostRequest('/api/v1/orchestration/run/start', payload);
-        elements.preRunModal.hide();
-    });
+        socket.onerror = (error) => console.error(`[WebSocket] Error: ${error.message}`);
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            } catch (e) {
+                console.warn("Received non-JSON message:", event.data);
+            }
+        };
+    }
 
-    elements.stopRunBtn.addEventListener('click', () => sendPostRequest('/api/v1/orchestration/run/stop'));
-    elements.resetAllBtn.addEventListener('click', () => sendPostRequest('/api/v1/system/reset-all'));
-    elements.acknowledgeAlarmBtn.addEventListener('click', () => sendPostRequest('/api/v1/orchestration/run/acknowledge-alarm'));
+    function handleWebSocketMessage(data) {
+        if (data.type === 'full_status') {
+            const { system, orchestration } = data.data;
+            updateSystemStatus(system);
+            updateOrchestrationStatus(orchestration);
+        } else if (data.type === 'qc_update') {
+            updateCameraFeeds(data.data);
+            updateAIDetails(data.data);
+        }
+    }
 
-    // --- THIS IS THE CORRECTED EVENT LISTENER for toggles ---
-    elements.manualControlToggles.forEach(toggle => {
-        toggle.addEventListener('change', function() {
-            const name = this.dataset.controlName; // Use the robust data-attribute
-            if(name) {
-                sendPostRequest(`/api/v1/outputs/toggle/${name}`);
+    // --- UI UPDATE FUNCTIONS ---
+    function updateSystemStatus(system) {
+        countOnBeltEl.textContent = system.in_flight_count;
+
+        // Update manual toggle switches based on their actual state
+        document.querySelectorAll('.manual-control-toggle input').forEach(toggle => {
+            const controlName = toggle.dataset.controlName;
+            const statusKey = `${controlName}_relay_status`;
+            if (statusKey in system) {
+                toggle.checked = system[statusKey];
             }
         });
-    });
+    }
 
-    elements.cameraSwitcher.addEventListener('click', e => {
-        if (e.target.classList.contains('camera-select-btn')) {
-            const newCamId = e.target.dataset.cameraId;
-            if (newCamId !== currentCameraId) {
-                switchCamera(newCamId);
+    function updateOrchestrationStatus(orchestration) {
+        conveyorModeEl.textContent = orchestration.mode.toUpperCase();
+        countExitedEl.textContent = orchestration.run_progress;
+        
+        // Toggle conveyor animation
+        const isRunning = orchestration.mode === 'Running' || orchestration.mode === 'Post-Run Delay';
+        conveyorBeltEl.classList.toggle('running', isRunning);
+
+        // Update run details
+        activeProfileDisplay.textContent = orchestration.active_profile || 'None';
+        runDetailBatch.textContent = orchestration.batch_code || 'N/A';
+        runDetailOperator.textContent = orchestration.operator_name || 'N/A';
+
+        // Update UI components based on state
+        updateRunStatusProgress(orchestration);
+        updateAlarmBlock(orchestration);
+        updateCountdownTimer(orchestration);
+    }
+
+    function updateRunStatusProgress(orchestration) {
+        const { run_progress, target_count } = orchestration;
+        const percentage = (target_count > 0) ? (run_progress / target_count) * 100 : 0;
+        const circumference = 2 * Math.PI * 45; // r=45
+        const offset = circumference - (percentage / 100) * circumference;
+        
+        progressPath.style.strokeDasharray = `${circumference} ${circumference}`;
+        progressPath.style.strokeDashoffset = offset;
+        progressPercentageEl.textContent = `${Math.min(100, Math.round(percentage))}%`;
+        progressDetailsEl.textContent = `${run_progress} / ${target_count === 0 ? '∞' : target_count}`;
+    }
+
+    function updateAlarmBlock(orchestration) {
+        if (orchestration.active_alarm_message) {
+            alarmMessageEl.textContent = orchestration.active_alarm_message;
+            alarmBlock.style.display = 'flex';
+        } else {
+            alarmBlock.style.display = 'none';
+        }
+    }
+
+    function updateCountdownTimer(orchestration) {
+        if (orchestration.mode === 'Paused (Between Batches)' && orchestration.pause_start_time) {
+            countdownCard.style.display = 'block';
+            if (countdownInterval) clearInterval(countdownInterval); // Prevent duplicates
+
+            const startTime = new Date(orchestration.pause_start_time).getTime();
+            const durationMs = orchestration.post_batch_delay_sec * 1000;
+            const endTime = startTime + durationMs;
+
+            countdownInterval = setInterval(() => {
+                const remaining = Math.max(0, endTime - Date.now());
+                if (remaining === 0) {
+                    countdownTimerEl.textContent = "00:00";
+                    clearInterval(countdownInterval);
+                    countdownInterval = null; 
+                } else {
+                    const seconds = Math.floor((remaining / 1000) % 60).toString().padStart(2, '0');
+                    const minutes = Math.floor(remaining / (1000 * 60)).toString().padStart(2, '0');
+                    countdownTimerEl.textContent = `${minutes}:${seconds}`;
+                }
+            }, 500);
+        } else {
+            countdownCard.style.display = 'none';
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
             }
         }
-    });
+    }
     
-    function switchCamera(camId) {
-        currentCameraId = camId;
-        elements.liveCameraFeed.src = `/api/v1/camera/stream/${camId}`;
-        elements.liveFeedTitle.textContent = `LIVE - ${camId.toUpperCase()}`;
-        document.querySelectorAll('.camera-select-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.cameraId === camId);
+    function updateCameraFeeds(qcData) {
+        // We only care about the annotated image for the AI feed
+        const ctx = aiFeedCanvas.getContext('2d');
+        const img = new Image();
+        img.onload = () => {
+            aiFeedCanvas.width = img.width;
+            aiFeedCanvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+        };
+        img.src = qcData.annotated_path;
+    }
+
+    function updateAIDetails(qcData) {
+        aiDetailsSection.style.display = 'block';
+        const qcSummary = qcData.results.qc_summary || {};
+        const catSummary = qcData.results.category_summary || {};
+        const validation = qcData.results.validation_results || { checks: [] };
+
+        aiDetailsQCStatus.textContent = qcSummary.overall_status || 'N/A';
+        aiDetailsQCStatus.className = `status-${qcSummary.overall_status}`;
+        aiDetailsQCConfidence.textContent = qcSummary.confidence ? `${(qcSummary.confidence * 100).toFixed(1)}%` : '--';
+
+        aiDetailsCategoryName.textContent = catSummary.detected_type || 'N/A';
+        aiDetailsCategoryConfidence.textContent = catSummary.confidence ? `${(catSummary.confidence * 100).toFixed(1)}%` : '--';
+
+        aiValidationList.innerHTML = '';
+        if (validation.checks.length > 0) {
+            validation.checks.forEach(check => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `
+                    <span>${check.check_type}: <span class="fw-bold">${check.value}</span></span>
+                    <span class="badge ${check.status === 'PASS' ? 'bg-success' : 'bg-danger'}">${check.status}</span>
+                `;
+                aiValidationList.appendChild(li);
+            });
+        } else {
+            aiValidationList.innerHTML = '<li class="list-group-item text-muted">No geometric validation enabled.</li>';
+        }
+    }
+
+
+    // --- EVENT LISTENERS ---
+    function attachEventListeners() {
+        startRunBtn.addEventListener('click', handleStartRunClick);
+        stopRunBtn.addEventListener('click', () => postAPI('/api/v1/orchestration/run/stop', {}));
+        resetAllBtn.addEventListener('click', () => postAPI('/api/v1/system/reset-all', {}));
+        acknowledgeAlarmBtn.addEventListener('click', () => postAPI('/api/v1/orchestration/run/acknowledge-alarm', {}));
+        
+        document.querySelectorAll('.manual-control-toggle input').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                postAPI(`/api/v1/outputs/toggle/${e.target.dataset.controlName}`, {});
+            });
         });
+
+        // Modal Listeners
+        reviewRunBtn.addEventListener('click', handleReviewRun);
+        goBackBtn.addEventListener('click', () => {
+            confirmView.style.display = 'none';
+            inputView.style.display = 'block';
+        });
+        startFinalRunBtn.addEventListener('click', handleFinalStart);
     }
 
-    aiFeedImage.onload = () => {
-        elements.aiFeedCanvas.width = aiFeedImage.naturalWidth;
-        elements.aiFeedCanvas.height = aiFeedImage.naturalHeight;
-        aiFeedCtx.drawImage(aiFeedImage, 0, 0);
-    };
-
-    // --- INITIAL SETUP ---
-    const firstCameraBtn = document.querySelector('.camera-select-btn');
-    if (firstCameraBtn) {
-        switchCamera(firstCameraBtn.dataset.cameraId);
+    function handleStartRunClick() {
+        if (!profileSelect.value) {
+            alert("Please select an Object Profile (Recipe) before starting a run.");
+            return;
+        }
+        // Reset modal to initial state
+        inputView.style.display = 'block';
+        confirmView.style.display = 'none';
+        batchCodeInput.value = '';
+        operatorSelect.selectedIndex = 0;
+        preRunModal.show();
     }
-    initWebSocket();
+    
+    function handleReviewRun() {
+        if (!operatorSelect.value || !batchCodeInput.value) {
+            alert("Operator and Batch Code are required.");
+            return;
+        }
+        document.getElementById('confirm-operator').textContent = operatorSelect.options[operatorSelect.selectedIndex].text;
+        document.getElementById('confirm-batch-code').textContent = batchCodeInput.value;
+        document.getElementById('confirm-recipe').textContent = profileSelect.options[profileSelect.selectedIndex].text;
+        document.getElementById('confirm-target').textContent = targetCountInput.value === '0' ? 'Continuous (∞)' : targetCountInput.value;
+
+        inputView.style.display = 'none';
+        confirmView.style.display = 'block';
+    }
+
+    function handleFinalStart() {
+        const payload = {
+            object_profile_id: parseInt(profileSelect.value),
+            target_count: parseInt(targetCountInput.value),
+            post_batch_delay_sec: parseInt(postBatchDelayInput.value),
+            batch_code: batchCodeInput.value,
+            operator_id: parseInt(operatorSelect.value)
+        };
+        
+        postAPI('/api/v1/orchestration/run/start', payload);
+        preRunModal.hide();
+    }
+
+    // --- KICK IT OFF ---
+    initialize();
 });

@@ -17,6 +17,7 @@ from app.core.sensor_events import SensorEvent, SensorState
 from app.services.orchestration_service import AsyncOrchestrationService, OperatingMode
 from app.models.detection import DetectionEventLog
 from config import settings
+from app.services.audio_service import AsyncAudioService
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -63,7 +64,8 @@ class AsyncDetectionService:
         redis_client: redis.Redis,
         conveyor_settings,
         db_session_factory,
-        active_camera_ids: List[str]
+        active_camera_ids: List[str],
+        audio_service: AsyncAudioService
     ):
         self._io = modbus_controller
         self._camera_manager = camera_manager
@@ -72,6 +74,7 @@ class AsyncDetectionService:
         self._conveyor_config = conveyor_settings
         self._get_db_session = db_session_factory
         self._active_camera_ids = active_camera_ids
+        self._audio_service = audio_service
         self._lock = asyncio.Lock()
         self._verbose = settings.LOGGING.VERBOSE_LOGGING
         self._output_map = settings.OUTPUTS
@@ -86,6 +89,23 @@ class AsyncDetectionService:
 
     def get_in_flight_count(self) -> int:
         return len(self._in_flight_objects)
+
+    # --- NEW METHOD TO BE CALLED BY SYSTEM SERVICE ---
+    async def reset_state(self):
+        """
+        Clears all internal state of the detection service, including in-flight objects.
+        """
+        async with self._lock:
+            self._in_flight_objects.clear()
+            self._entry_timestamps.clear()
+            
+            # Cancel any pending stall timers to prevent them from firing later
+            for timer in self._stalled_product_timers.values():
+                timer.cancel()
+            self._stalled_product_timers.clear()
+            
+            print("Detection Service: Internal state has been fully reset.")
+    # --- END OF NEW METHOD ---
 
     async def _check_sensor_block_time(self, event: SensorEvent):
         start_time = self._entry_timestamps.pop(event.sensor_id, None)
@@ -165,7 +185,6 @@ class AsyncDetectionService:
         
         combined_results = {"raw_responses": {}}
         
-        # --- PROCESS AND COMBINE RESULTS ---
         cat_model_id = settings.AI_API.CATEGORY_MODEL_ID
         cat_index = models_to_run.index(cat_model_id) if cat_model_id in models_to_run else -1
         if cat_index != -1 and api_responses[cat_index] and api_responses[cat_index].get("detections"):
@@ -177,6 +196,7 @@ class AsyncDetectionService:
                 "obb_points": detection["coordinates"]["obb_points"],
                 "rotated_box": detection["coordinates"]["rotated_box"]
             }
+            await self._audio_service.play_sound_for_event(detection["class_name"])
 
         qc_model_id = settings.AI_API.QC_MODEL_ID
         qc_index = models_to_run.index(qc_model_id) if qc_model_id in models_to_run else -1
@@ -188,15 +208,14 @@ class AsyncDetectionService:
                 "angle_degrees": detection["coordinates"]["rotated_box"]["angle_degrees"],
                 "obb_points": detection["coordinates"]["obb_points"]
             }
+            await self._audio_service.play_sound_for_event(detection["class_name"])
 
-        # --- DEEP ANALYSIS & GEOMETRIC VALIDATION ---
         validation_results = {"checks": []}
         final_qc_status = combined_results.get("qc_summary", {}).get("overall_status", "PENDING")
 
         if product and "category_summary" in combined_results:
             cat_sum = combined_results["category_summary"]
             
-            # 1. Tilt/Angle Check
             if product.target_angle is not None and product.angle_tolerance is not None:
                 angle = cat_sum["angle_degrees"]
                 is_pass = abs(angle - product.target_angle) <= product.angle_tolerance
@@ -206,7 +225,6 @@ class AsyncDetectionService:
                 })
                 if not is_pass: final_qc_status = "REJECT"
 
-            # 2. Aspect Ratio / Deformation Check
             if product.min_aspect_ratio is not None and product.max_aspect_ratio is not None:
                 w = cat_sum["rotated_box"]["width"]
                 h = cat_sum["rotated_box"]["height"]
@@ -221,8 +239,6 @@ class AsyncDetectionService:
         combined_results["validation_results"] = validation_results
         if "qc_summary" in combined_results:
             combined_results["qc_summary"]["overall_status"] = final_qc_status
-
-        # --- END OF DEEP ANALYSIS ---
 
         annotated_path = self._annotate_image_from_results(full_image_path, combined_results)
             
@@ -243,7 +259,6 @@ class AsyncDetectionService:
         await self._redis.publish("qc_annotated_image:new", broadcast_payload)
 
     async def handle_sensor_event(self, event: SensorEvent):
-        # ... (This function is unchanged)
         async with self._lock:
             if self._orchestration.get_status()["mode"] not in [OperatingMode.RUNNING.value, OperatingMode.POST_RUN_DELAY.value]:
                 if self._stalled_product_timers:

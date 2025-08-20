@@ -13,7 +13,8 @@ from . import products
 from . import operators
 from . import run_history
 from . import reports
-from . import analytics # <-- ADD THIS LINE
+from . import analytics 
+from . import audio # <-- ADD THIS IMPORT
 
 # Create the main router for the v1 API.
 api_router = APIRouter()
@@ -29,4 +30,5 @@ api_router.include_router(products.router, prefix="/products", tags=["Product Ma
 api_router.include_router(operators.router, prefix="/operators", tags=["Operator Master"])
 api_router.include_router(run_history.router, prefix="/run-history", tags=["Run History"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
-api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"]) # <-- ADD THIS LINE
+api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+api_router.include_router(audio.router, prefix="/audio", tags=["Audio"]) # <-- ADD THIS LINE

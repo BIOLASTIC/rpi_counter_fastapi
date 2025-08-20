@@ -1,12 +1,5 @@
-"""
-Provides high-level system monitoring and control functionality.
+# rpi_counter_fastapi-apintrigation/app/services/system_service.py
 
-REVISED: All AI-related status information has been removed from the
-system status payload.
-
-DEFINITIVE FIX: The __init__ method is corrected to only accept the
-dependencies it actually uses, resolving the startup TypeError.
-"""
 import time
 from typing import Dict, Optional
 import psutil
@@ -17,7 +10,7 @@ from app.core.modbus_poller import AsyncModbusPoller
 from app.services.orchestration_service import AsyncOrchestrationService
 from app.services.detection_service import AsyncDetectionService
 from config import ACTIVE_CAMERA_IDS
-from config.settings import AppSettings # Import for type hinting
+from config.settings import AppSettings
 
 def _get_rpi_cpu_temp() -> Optional[float]:
     """Safely gets the Raspberry Pi CPU temperature."""
@@ -31,7 +24,6 @@ class AsyncSystemService:
     """
     Gathers and provides a unified status report for all system components.
     """
-    # --- THIS IS THE CORRECTED CONSTRUCTOR ---
     def __init__(
         self,
         modbus_controller: AsyncModbusController,
@@ -39,21 +31,28 @@ class AsyncSystemService:
         camera_manager: AsyncCameraManager,
         detection_service: AsyncDetectionService,
         orchestration_service: AsyncOrchestrationService,
-        settings: AppSettings # <-- It still needs the main settings
+        settings: AppSettings
     ):
         self._io = modbus_controller
         self._poller = modbus_poller
         self._camera = camera_manager
         self._detection_service = detection_service
         self._orchestration_service = orchestration_service
-        self._settings = settings # <-- Use the injected settings
+        self._settings = settings
         self._sensor_config = self._settings.SENSORS
         self._output_config = self._settings.OUTPUTS.model_dump()
         self._app_start_time = time.monotonic()
 
     async def full_system_reset(self):
-        """Resets the running process. This is a "soft" reset."""
+        """
+        Resets all counters, stops all hardware, and clears all in-memory state.
+        This provides a comprehensive system state reset.
+        """
+        print("System Service: Full system reset initiated.")
+        # First, stop all hardware and reset the run state
         await self._orchestration_service.stop_run()
+        # Then, clear the detection service's internal state (in-flight objects, etc.)
+        await self._detection_service.reset_state()
 
     async def get_system_status(self) -> Dict:
         """Gathers the current health status from all components safely."""

@@ -1,13 +1,10 @@
-# rpi_counter_fastapi-dev2/app/services/orchestration_service.py
+# rpi_counter_fastapi-apintrigation/app/services/orchestration_service.py
 
-"""
-Service for controlling the high-level orchestration of production runs.
-"""
 import asyncio
 import json
 from enum import Enum
 from typing import Optional, Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 import time 
 
 import redis.asyncio as redis
@@ -22,6 +19,7 @@ from app.models.event_log import EventLog, EventType
 from app.models.operator import Operator
 from config import ACTIVE_CAMERA_IDS, settings
 from config.settings import AppSettings
+from app.services.audio_service import AsyncAudioService
 
 
 class OperatingMode(str, Enum):
@@ -37,12 +35,14 @@ class AsyncOrchestrationService:
         modbus_controller: AsyncModbusController,
         db_session_factory,
         redis_client: redis.Redis,
-        app_settings: AppSettings
+        app_settings: AppSettings,
+        audio_service: AsyncAudioService
     ):
         self._io = modbus_controller
         self._get_db_session = db_session_factory
         self._redis = redis_client
         self._settings = app_settings
+        self._audio_service = audio_service
         self._mode = OperatingMode.STOPPED
         self._lock = asyncio.Lock()
         
@@ -59,13 +59,14 @@ class AsyncOrchestrationService:
         self._run_post_batch_delay_sec: int = 5
         self._current_count: int = 0
         
+        self._pause_start_time: Optional[datetime] = None # <-- ADD THIS STATE VARIABLE
+        
         self._output_map = self._settings.OUTPUTS
         
         self._buzzer_queue = asyncio.Queue()
         self._buzzer_task: Optional[asyncio.Task] = None
 
     def beep_for(self, duration_ms: int):
-        """Queues a non-blocking beep request for the buzzer manager."""
         if duration_ms > 0:
             try:
                 self._buzzer_queue.put_nowait(duration_ms)
@@ -73,10 +74,8 @@ class AsyncOrchestrationService:
                 print("Buzzer queue is full, dropping request.")
 
     async def _buzzer_manager(self):
-        """A single, long-running task to manage all buzzer requests."""
         buzzer_off_time = 0.0
         is_buzzer_on = False
-        
         while True:
             try:
                 try:
@@ -87,9 +86,7 @@ class AsyncOrchestrationService:
                     self._buzzer_queue.task_done()
                 except asyncio.TimeoutError:
                     pass
-
                 current_time = time.monotonic()
-                
                 if current_time < buzzer_off_time:
                     if not is_buzzer_on:
                         await self._io.write_coil(self._output_map.BUZZER, True)
@@ -108,13 +105,11 @@ class AsyncOrchestrationService:
                 await asyncio.sleep(1)
 
     def start_background_tasks(self):
-        """Starts the background tasks managed by this service."""
         if self._buzzer_task is None or self._buzzer_task.done():
             self._buzzer_task = asyncio.create_task(self._buzzer_manager())
             print("Orchestration Service: Buzzer manager task started.")
 
     def stop_background_tasks(self):
-        """Stops the background tasks managed by this service."""
         if self._buzzer_task and not self._buzzer_task.done():
             self._buzzer_task.cancel()
             print("Orchestration Service: Buzzer manager task stopped.")
@@ -146,7 +141,6 @@ class AsyncOrchestrationService:
             await task_to_run
 
     async def on_exit_sensor_triggered(self):
-        """Triggers a short beep when the exit sensor is hit."""
         self.beep_for(self._settings.BUZZER.EXIT_SENSOR_MS)
 
     async def trigger_persistent_alarm(self, message: str):
@@ -169,6 +163,7 @@ class AsyncOrchestrationService:
         async with self._lock:
             if self._mode != OperatingMode.RUNNING: return
             print(f"CRITICAL RUN FAILURE: {reason}. Stopping all operations.")
+            await self._audio_service.play_sound_for_event("product_stalled")
             try:
                 async with self._get_db_session() as session:
                     log_entry = EventLog(
@@ -184,6 +179,7 @@ class AsyncOrchestrationService:
             self._active_profile, self._active_product, self._active_run_id = None, None, None
             self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
             self._run_operator_name, self._run_batch_code = None, None
+            self._pause_start_time = None # <-- RESET PAUSE TIME
             await self.initialize_hardware_state()
             await self.trigger_persistent_alarm(f"CRITICAL FAILURE: {reason}")
 
@@ -191,6 +187,7 @@ class AsyncOrchestrationService:
         if not self._active_alarm_message: return
         print(f"Orchestrator: Alarm '{self._active_alarm_message}' acknowledged by user.")
         self._active_alarm_message = None
+        await self._audio_service.play_sound_for_event("alarm_acknowledged")
 
     async def start_run(self, profile_id: int, target_count: int, post_batch_delay_sec: int, batch_code: str, operator_id: int) -> bool:
         async with self._lock:
@@ -209,7 +206,6 @@ class AsyncOrchestrationService:
             return await self._execute_start_sequence()
             
     async def _execute_start_sequence(self) -> bool:
-        """Internal method to start a batch. Can be called to loop."""
         async with self._get_db_session() as session:
             result = await session.execute(
                 select(ObjectProfile).options(selectinload(ObjectProfile.camera_profile), selectinload(ObjectProfile.product))
@@ -248,6 +244,7 @@ class AsyncOrchestrationService:
             await self._redis.publish(f"camera:commands:{cam_id}", command_bytes)
         
         self._current_count, self._mode = 0, OperatingMode.RUNNING
+        self._pause_start_time = None # <-- RESET PAUSE TIME
         await self._io.write_coil(self._output_map.LED_RED, False)
         await self._io.write_coil(self._output_map.LED_GREEN, True)
         await self._io.write_coil(self._output_map.CONVEYOR, True)
@@ -265,9 +262,6 @@ class AsyncOrchestrationService:
             print(f"Error updating RunLog status: {e}")
 
     async def complete_and_loop_run(self):
-        """
-        Sequence for when a batch target is met.
-        """
         async with self._lock:
             if self._mode != OperatingMode.RUNNING: return
             
@@ -284,6 +278,7 @@ class AsyncOrchestrationService:
             if self._mode != OperatingMode.POST_RUN_DELAY: return
             await self._io.write_coil(self._output_map.CONVEYOR, False)
             self._mode = OperatingMode.PAUSED_BETWEEN_BATCHES
+            self._pause_start_time = datetime.now(timezone.utc) # <-- SET PAUSE START TIME
             pause_delay = self._run_post_batch_delay_sec
             print(f"Orchestrator: Conveyor stopped. Pausing for {pause_delay}s before next batch.")
 
@@ -305,11 +300,12 @@ class AsyncOrchestrationService:
             self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
             self._run_operator_name = None
             self._run_batch_code = None
+            self._pause_start_time = None # <-- RESET PAUSE TIME
             await self.acknowledge_alarm()
             await self.initialize_hardware_state()
 
     def get_status(self) -> dict:
-        return {
+        status_payload = {
             "mode": self._mode.value,
             "active_profile": self._active_profile.name if self._active_profile else "None",
             "operator_name": self._run_operator_name,
@@ -318,4 +314,9 @@ class AsyncOrchestrationService:
             "target_count": self._run_target_count,
             "post_batch_delay_sec": self._run_post_batch_delay_sec,
             "active_alarm_message": self._active_alarm_message,
+            "pause_start_time": None,
         }
+        if self._mode == OperatingMode.PAUSED_BETWEEN_BATCHES and self._pause_start_time:
+             status_payload["pause_start_time"] = self._pause_start_time.isoformat()
+        
+        return status_payload
