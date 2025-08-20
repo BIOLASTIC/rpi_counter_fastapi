@@ -1,4 +1,4 @@
-# rpi_counter_fastapi-dev2/app/services/detection_service.py
+# rpi_counter_fastapi-apintrigation/app/services/detection_service.py
 
 import asyncio
 import uuid
@@ -11,7 +11,6 @@ import numpy as np
 from pathlib import Path
 import redis.asyncio as redis
 
-
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.sensor_events import SensorEvent, SensorState
@@ -22,42 +21,37 @@ from config import settings
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 class QcApiService:
-    """A client to interact with the external QC API System."""
+    """A client to interact with the external YOLOv11 OBB AI API System."""
     def __init__(self, base_url: str):
         self.base_url = base_url
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=10.0)
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=20.0)
 
-    async def perform_inspection(
-        self, image_path: str, serial_number: str, checks: List[str]
+    async def predict(
+        self, image_path: str, serial_number: str, model_id: str
     ) -> Optional[Dict[str, Any]]:
-        if not checks:
-            return None 
-
-        url = "/api/v1/inspection/single/upload"
-        params = [("checks_to_perform", check) for check in checks]
-        
+        url = "/predict"
         try:
-            print(f"Attempting to open file for AI upload: {image_path}")
             with open(image_path, "rb") as f:
-                files = {"image": (Path(image_path).name, f, "image/jpeg")}
-                data = {"serial_number": serial_number}
+                image_bytes = f.read()
+                files = {"image": (Path(image_path).name, image_bytes, "image/jpeg")}
+                data = {"model_id": model_id, "serial_no": serial_number}
                 
-                print(f"QC API Request: Uploading {Path(image_path).name} for checks: {checks}")
-                response = await self.client.post(url, params=params, files=files, data=data)
+                print(f"AI API Request: Uploading {Path(image_path).name} for model: {model_id}")
+                response = await self.client.post(url, files=files, data=data)
                 response.raise_for_status()
-                print("QC API Response: Success")
+                print(f"AI API Response for {model_id}: Success")
                 return response.json()
         except FileNotFoundError:
             print(f"FATAL FILE ERROR: The image file was not found at the path: {image_path}. Cannot send to AI.")
             return None
         except httpx.RequestError as e:
-            print(f"FATAL ERROR: Could not connect to QC API at {e.request.url}.")
+            print(f"FATAL ERROR: Could not connect to AI API at {e.request.url}.")
             return None
         except httpx.HTTPStatusError as e:
-            print(f"FATAL ERROR: QC API returned status {e.response.status_code}. Response: {e.response.text}")
+            print(f"FATAL ERROR: AI API returned status {e.response.status_code} for model {model_id}. Response: {e.response.text}")
             return None
         except Exception as e:
-            print(f"FATAL ERROR: An unexpected error occurred during QC API call: {e}")
+            print(f"FATAL ERROR: An unexpected error occurred during AI API call for model {model_id}: {e}")
             return None
 
 class AsyncDetectionService:
@@ -81,13 +75,10 @@ class AsyncDetectionService:
         self._lock = asyncio.Lock()
         self._verbose = settings.LOGGING.VERBOSE_LOGGING
         self._output_map = settings.OUTPUTS
-
-        self._qc_api_service = QcApiService(base_url="http://192.168.88.97:8001")
-
+        self._qc_api_service = QcApiService(base_url=settings.AI_API.BASE_URL)
         self._in_flight_objects: Deque[str] = deque()
         self._entry_timestamps: Dict[int, float] = {}
         self._stalled_product_timers: Dict[str, asyncio.TimerHandle] = {}
-        
         self._base_travel_time_sec = 0.0
         if self._conveyor_config.SPEED_M_PER_SEC > 0:
             self._base_travel_time_sec = self._conveyor_config.CAMERA_TO_SORTER_DISTANCE_M / self._conveyor_config.SPEED_M_PER_SEC
@@ -116,7 +107,7 @@ class AsyncDetectionService:
                 reason = f"Stalled product detected on conveyor (ID: {serial_number})"
                 await self._orchestration.trigger_run_failure(reason)
     
-    def _annotate_image_from_results(self, image_path: str, qc_results: Dict[str, Any]) -> str:
+    def _annotate_image_from_results(self, image_path: str, combined_results: Dict[str, Any]) -> str:
         try:
             image = cv2.imread(image_path)
             if image is None: return image_path
@@ -125,46 +116,25 @@ class AsyncDetectionService:
             annotated_dir = original_path_obj.parent / "annotated"
             annotated_dir.mkdir(exist_ok=True)
 
-            id_results = qc_results.get("identification_results", {})
-            has_drawn_anything = False
+            def draw_obb(points_flat, color, thickness, label=""):
+                if not points_flat or len(points_flat) != 8: return
+                points = np.array(points_flat, np.int32).reshape((-1, 1, 2))
+                cv2.polylines(image, [points], isClosed=True, color=color, thickness=thickness)
+                if label:
+                    label_pos = (points[0][0][0], points[0][0][1] - 10)
+                    cv2.putText(image, label, label_pos, cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3, cv2.LINE_AA)
 
-            def draw_bounding_box(box_data, label, color, thickness, label_inside=False):
-                nonlocal has_drawn_anything
-                if not box_data: return
-                x, y, w, h = int(box_data.get("x", 0)), int(box_data.get("y", 0)), int(box_data.get("width", 0)), int(box_data.get("height", 0))
-                
-                cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness)
-                has_drawn_anything = True
-
-                font_scale, font_thickness = 1.0, 2
-                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-                
-                if label_inside:
-                    text_y = y + text_h + 10
-                    cv2.rectangle(image, (x, y), (x + text_w + 10, text_y + 10), color, -1)
-                    cv2.putText(image, label, (x + 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
-                else:
-                    text_y, bg_y = y - 10, y - text_h - 20
-                    cv2.rectangle(image, (x, bg_y), (x + text_w + 10, text_y + 10), color, -1)
-                    cv2.putText(image, label, (x + 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
-
-            qc_check = id_results.get("qc")
-            if qc_check and qc_check.get("overall_status"):
-                color = (0, 255, 0) if qc_check['overall_status'] == "ACCEPT" else (0, 0, 255)
-                draw_bounding_box(qc_check.get("bounding_box"), f"Status: {qc_check['overall_status']}", color, 10, label_inside=True)
-
-            category_check = id_results.get("category")
-            if category_check and category_check.get("detected_product_type"):
-                label = f"Type: {category_check['detected_product_type']} ({category_check.get('confidence', 0):.2f})"
-                draw_bounding_box(category_check.get("bounding_box"), label, (255, 0, 0), 5)
-
-            defects = id_results.get("defects", {}).get("defects", [])
-            for defect in defects:
-                label = f"Defect: {defect.get('defect_type', 'N/A')} ({defect.get('confidence', 0):.2f})"
-                draw_bounding_box(defect.get("bounding_box"), label, (0, 255, 255), 3)
-
-            if not has_drawn_anything:
-                cv2.putText(image, "NO DETECTIONS", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
+            category_summary = combined_results.get("category_summary", {})
+            if category_summary.get("obb_points"):
+                label = f"{category_summary.get('detected_type', 'N/A')}"
+                draw_obb(category_summary["obb_points"], (255, 191, 0), 5, label)
+            
+            qc_summary = combined_results.get("qc_summary", {})
+            if qc_summary.get("obb_points"):
+                status = qc_summary.get("overall_status", "UNKNOWN")
+                color = (0, 255, 0) if status == "ACCEPT" else (0, 0, 255)
+                label = f"QC: {status}"
+                draw_obb(qc_summary["obb_points"], color, 8, label)
 
             save_path = str(annotated_dir / original_path_obj.name)
             cv2.imwrite(save_path, image)
@@ -177,42 +147,103 @@ class AsyncDetectionService:
         active_profile = self._orchestration.get_active_profile()
         product = active_profile.product if active_profile else None
         
-        checks = ['qc']
+        models_to_run = []
         if product:
-            if product.verify_category: checks.append("product_category")
-            if product.verify_size: checks.append("size")
-            if product.verify_defects: checks.append("defects")
-            if product.verify_ticks: checks.append("ticks")
+            if product.verify_category: models_to_run.append(settings.AI_API.CATEGORY_MODEL_ID)
+            if any([product.verify_category, product.verify_size, product.verify_defects, product.verify_ticks]):
+                if settings.AI_API.QC_MODEL_ID not in models_to_run:
+                    models_to_run.append(settings.AI_API.QC_MODEL_ID)
+
+        if not models_to_run:
+            print("No AI checks enabled for this product. Skipping AI analysis.")
+            return
 
         full_image_path = str(PROJECT_ROOT / "web" / "static" / Path(image_path).relative_to('/'))
         
-        qc_results = await self._qc_api_service.perform_inspection(image_path=full_image_path, serial_number=serial_number, checks=checks)
+        tasks = [self._qc_api_service.predict(full_image_path, serial_number, model_id) for model_id in models_to_run]
+        api_responses = await asyncio.gather(*tasks)
         
-        annotated_path = image_path 
-        if qc_results:
-            annotated_path = self._annotate_image_from_results(full_image_path, qc_results)
+        combined_results = {"raw_responses": {}}
+        
+        # --- PROCESS AND COMBINE RESULTS ---
+        cat_model_id = settings.AI_API.CATEGORY_MODEL_ID
+        cat_index = models_to_run.index(cat_model_id) if cat_model_id in models_to_run else -1
+        if cat_index != -1 and api_responses[cat_index] and api_responses[cat_index].get("detections"):
+            detection = api_responses[cat_index]["detections"][0]
+            combined_results["raw_responses"][cat_model_id] = api_responses[cat_index]
+            combined_results["category_summary"] = {
+                "detected_type": detection["class_name"], "confidence": detection["confidence"],
+                "angle_degrees": detection["coordinates"]["rotated_box"]["angle_degrees"],
+                "obb_points": detection["coordinates"]["obb_points"],
+                "rotated_box": detection["coordinates"]["rotated_box"]
+            }
+
+        qc_model_id = settings.AI_API.QC_MODEL_ID
+        qc_index = models_to_run.index(qc_model_id) if qc_model_id in models_to_run else -1
+        if qc_index != -1 and api_responses[qc_index] and api_responses[qc_index].get("detections"):
+            detection = api_responses[qc_index]["detections"][0]
+            combined_results["raw_responses"][qc_model_id] = api_responses[qc_index]
+            combined_results["qc_summary"] = {
+                "overall_status": detection["class_name"], "confidence": detection["confidence"],
+                "angle_degrees": detection["coordinates"]["rotated_box"]["angle_degrees"],
+                "obb_points": detection["coordinates"]["obb_points"]
+            }
+
+        # --- DEEP ANALYSIS & GEOMETRIC VALIDATION ---
+        validation_results = {"checks": []}
+        final_qc_status = combined_results.get("qc_summary", {}).get("overall_status", "PENDING")
+
+        if product and "category_summary" in combined_results:
+            cat_sum = combined_results["category_summary"]
+            
+            # 1. Tilt/Angle Check
+            if product.target_angle is not None and product.angle_tolerance is not None:
+                angle = cat_sum["angle_degrees"]
+                is_pass = abs(angle - product.target_angle) <= product.angle_tolerance
+                validation_results["checks"].append({
+                    "check_type": "Angle", "status": "PASS" if is_pass else "FAIL",
+                    "value": f"{angle:.2f}°", "expected": f"{product.target_angle}° ± {product.angle_tolerance}°"
+                })
+                if not is_pass: final_qc_status = "REJECT"
+
+            # 2. Aspect Ratio / Deformation Check
+            if product.min_aspect_ratio is not None and product.max_aspect_ratio is not None:
+                w = cat_sum["rotated_box"]["width"]
+                h = cat_sum["rotated_box"]["height"]
+                aspect_ratio = w / h if h > 0 else 0
+                is_pass = product.min_aspect_ratio <= aspect_ratio <= product.max_aspect_ratio
+                validation_results["checks"].append({
+                    "check_type": "Aspect Ratio", "status": "PASS" if is_pass else "FAIL",
+                    "value": f"{aspect_ratio:.2f}", "expected": f"{product.min_aspect_ratio} - {product.max_aspect_ratio}"
+                })
+                if not is_pass: final_qc_status = "REJECT"
+
+        combined_results["validation_results"] = validation_results
+        if "qc_summary" in combined_results:
+            combined_results["qc_summary"]["overall_status"] = final_qc_status
+
+        # --- END OF DEEP ANALYSIS ---
+
+        annotated_path = self._annotate_image_from_results(full_image_path, combined_results)
             
         try:
             async with self._get_db_session() as session:
                 log_entry = await session.get(DetectionEventLog, detection_log_id)
                 if log_entry:
                     log_entry.annotated_image_path = annotated_path
-                    # --- THIS IS THE FIX ---
-                    # Save the results to the 'details' column instead of the non-existent 'results' column
-                    log_entry.details = qc_results
-                    # --- END OF FIX ---
+                    log_entry.details = combined_results
                     await session.commit()
         except Exception as e:
             print(f"ERROR: Could not update DB with annotated path and results: {e}")
         
         broadcast_payload = json.dumps({
-            "annotated_path": annotated_path,
-            "original_path": image_path,
-            "results": qc_results
+            "annotated_path": annotated_path, "original_path": image_path,
+            "results": combined_results
         })
         await self._redis.publish("qc_annotated_image:new", broadcast_payload)
 
     async def handle_sensor_event(self, event: SensorEvent):
+        # ... (This function is unchanged)
         async with self._lock:
             if self._orchestration.get_status()["mode"] not in [OperatingMode.RUNNING.value, OperatingMode.POST_RUN_DELAY.value]:
                 if self._stalled_product_timers:

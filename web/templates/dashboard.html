@@ -1,9 +1,9 @@
-<!-- rpi_counter_fastapi-dev2/web/templates/dashboard.html -->
+<!-- rpi_counter_fastapi-apintrigation/web/templates/dashboard.html -->
 
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.7"> <!-- Version bumped -->
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=2.9"> <!-- Version bumped -->
 
 <div class="dashboard-container">
 
@@ -30,10 +30,9 @@
         </div>
     </div>
 
-    <!-- Run Status Section (MODIFIED STRUCTURE) -->
+    <!-- Run Status Section -->
     <div class="grid-card run-status-card">
         <h3 class="card-title" style="justify-content: center;"><i class="bi bi-stack"></i> Run Status</h3>
-        <!-- THIS IS THE FIX: Wrapper div for flex layout -->
         <div class="run-status-content-wrapper">
             <div class="progress-container">
                 <svg class="progress-circle" viewBox="0 0 100 100">
@@ -68,13 +67,24 @@
                 <canvas id="ai-feed-canvas"></canvas>
             </div>
         </div>
+        
         <div id="ai-details-section" class="ai-details-container" style="display: none;">
-            <h5 class="ai-details-title">Detection Summary</h5>
-            <div class="ai-details-grid">
-                <div><span class="detail-label">Quality Status:</span> <span id="ai-details-qc" class="detail-value">--</span></div>
-                <div><span class="detail-label">Product Category:</span> <span id="ai-details-category" class="detail-value">--</span></div>
-                <div><span class="detail-label">Product Size:</span> <span id="ai-details-size" class="detail-value">--</span></div>
-                <div><span class="detail-label">Defects Found:</span> <span id="ai-details-defects" class="detail-value">--</span></div>
+            <h5 class="ai-details-title">Last Detection Summary</h5>
+            <div class="row">
+                <div class="col-md-7">
+                    <div class="details-grid">
+                        <div class="label">QC Status:</div> <span id="ai-details-qc-status">--</span>
+                        <div class="label">QC Confidence:</div> <span id="ai-details-qc-confidence">--</span>
+                        <div class="label">Category:</div> <span id="ai-details-category-name">--</span>
+                        <div class="label">Category Confidence:</div> <span id="ai-details-category-confidence">--</span>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div id="ai-validation-section">
+                        <h6 class="text-secondary">Geometric Validation</h6>
+                        <ul class="list-group list-group-flush" id="ai-validation-list"></ul>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -83,19 +93,9 @@
     <div class="grid-card control-card">
         <h3 class="card-title"><i class="bi bi-sliders"></i> Production Control</h3>
         <div class="control-grid-main">
-            <div class="control-section">
-                <h4 class="section-title">1. Select Recipe</h4>
-                <div class="form-group"><label for="object-profile-select">Object Profile</label><select id="object-profile-select" class="form-select"><option value="">-- Select a Profile --</option>{% for p in object_profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
-            </div>
-            <div class="control-section">
-                <h4 class="section-title">2. Configure Run</h4>
-                <div class="form-group"><label for="target-count-input">Target Count (0 for ∞)</label><input type="number" class="form-control" id="target-count-input" value="10" min="0"></div>
-                <div class="form-group" style="margin-top: 1rem;"><label for="post-batch-delay-input">Post-Run Pause (s)</label><input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0"></div>
-            </div>
-            <div class="control-section">
-                <h4 class="section-title">3. Execute</h4>
-                <div class="control-buttons"><button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button><button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button><button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button></div>
-            </div>
+            <div class="control-section"><h4 class="section-title">1. Select Recipe</h4><div class="form-group"><label for="object-profile-select">Object Profile</label><select id="object-profile-select" class="form-select"><option value="">-- Select a Profile --</option>{% for p in object_profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div></div>
+            <div class="control-section"><h4 class="section-title">2. Configure Run</h4><div class="form-group"><label for="target-count-input">Target Count (0 for ∞)</label><input type="number" class="form-control" id="target-count-input" value="10" min="0"></div><div class="form-group" style="margin-top: 1rem;"><label for="post-batch-delay-input">Post-Run Pause (s)</label><input type="number" class="form-control" id="post-batch-delay-input" value="5" min="0"></div></div>
+            <div class="control-section"><h4 class="section-title">3. Execute</h4><div class="control-buttons"><button class="btn-control btn-start" id="start-run-btn"><i class="bi bi-play-fill"></i> Load & Start Run</button><button class="btn-control btn-stop" id="stop-run-btn"><i class="bi bi-stop-fill"></i> Stop Run</button><button class="btn-control btn-reset" id="reset-all-btn"><i class="bi bi-arrow-counterclockwise"></i> Full Reset</button></div></div>
         </div>
     </div>
 
@@ -106,28 +106,24 @@
              <div class="status-item"><div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div><div class="status-badge" id="status-sensor-1">clear</div></div>
              <div class="status-item"><div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div><div class="status-badge" id="status-sensor-2">clear</div></div>
              <div class="status-item"><div class="status-label"><i class="bi bi-cpu"></i> IO Module</div><div class="status-badge" id="status-io-module">--</div></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div><label class="toggle-switch"><input type="checkbox" id="control-conveyor-toggle"><span class="toggle-slider"></span></label></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div><label class="toggle-switch"><input type="checkbox" id="control-gate-toggle"><span class="toggle-slider"></span></label></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-exclude"></i> Diverter</div><label class="toggle-switch"><input type="checkbox" id="control-diverter-toggle"><span class="toggle-slider"></span></label></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div><label class="toggle-switch"><input type="checkbox" id="control-camera_light-toggle"><span class="toggle-slider"></span></label></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-bell-fill"></i> Buzzer</div><label class="toggle-switch"><input type="checkbox" id="control-buzzer-toggle"><span class="toggle-slider"></span></label></div>
+             
+             <!-- --- THIS IS THE FIX: Added data-control-name to each toggle --- -->
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div><label class="toggle-switch"><input type="checkbox" data-control-name="conveyor"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div><label class="toggle-switch"><input type="checkbox" data-control-name="gate"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-exclude"></i> Diverter</div><label class="toggle-switch"><input type="checkbox" data-control-name="diverter"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div><label class="toggle-switch"><input type="checkbox" data-control-name="camera_light"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-bell-fill"></i> Buzzer</div><label class="toggle-switch"><input type="checkbox" data-control-name="buzzer"><span class="toggle-slider"></span></label></div>
+             <!-- --- END OF FIX --- -->
          </div>
     </div>
 </div>
 
 <!-- Pre-Run Modal -->
 <div class="modal fade" id="pre-run-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog">
-        <div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="pre-run-modal-title">Pre-Run Checklist</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <div id="pre-run-input-view"><p class="text-muted">Please provide the following details before starting the run.</p><div class="mb-3"><label for="operator-select" class="form-label">Operator*</label><select id="operator-select" class="form-select" required></select></div><div class="mb-3"><label for="batch-code-input" class="form-label">Batch Code*</label><input type="text" id="batch-code-input" class="form-control" required></div><div class="d-flex justify-content-end"><button type="button" class="btn btn-primary" id="review-run-btn">Review Run</button></div></div>
-                <div id="pre-run-confirm-view" style="display: none;"><h6>Please confirm the following run details:</h6><ul class="list-group"><li class="list-group-item"><strong>Operator:</strong> <span id="confirm-operator"></span></li><li class="list-group-item"><strong>Batch Code:</strong> <span id="confirm-batch-code"></span></li><li class="list-group-item"><strong>Recipe:</strong> <span id="confirm-recipe"></span></li><li class="list-group-item"><strong>Target:</strong> <span id="confirm-target"></span></li></ul><div class="alert alert-warning mt-3">This will start the conveyor belt and begin the production run.</div><div class="d-flex justify-content-between mt-3"><button type="button" class="btn btn-secondary" id="go-back-btn">Go Back</button><button type="button" class="btn btn-success" id="start-final-run-btn">START FINAL RUN</button></div></div>
-            </div>
-        </div>
-    </div>
+    <div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="pre-run-modal-title">Pre-Run Checklist</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="pre-run-input-view"><p class="text-muted">Please provide the following details before starting the run.</p><div class="mb-3"><label for="operator-select" class="form-label">Operator*</label><select id="operator-select" class="form-select" required></select></div><div class="mb-3"><label for="batch-code-input" class="form-label">Batch Code*</label><input type="text" id="batch-code-input" class="form-control" required></div><div class="d-flex justify-content-end"><button type="button" class="btn btn-primary" id="review-run-btn">Review Run</button></div></div><div id="pre-run-confirm-view" style="display: none;"><h6>Please confirm the following run details:</h6><ul class="list-group"><li class="list-group-item"><strong>Operator:</strong> <span id="confirm-operator"></span></li><li class="list-group-item"><strong>Batch Code:</strong> <span id="confirm-batch-code"></span></li><li class="list-group-item"><strong>Recipe:</strong> <span id="confirm-recipe"></span></li><li class="list-group-item"><strong>Target:</strong> <span id="confirm-target"></span></li></ul><div class="alert alert-warning mt-3">This will start the conveyor belt and begin the production run.</div><div class="d-flex justify-content-between mt-3"><button type="button" class="btn btn-secondary" id="go-back-btn">Go Back</button><button type="button" class="btn btn-success" id="start-final-run-btn">START FINAL RUN</button></div></div></div></div></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=2.7"></script>
+<script src="/static/js/dashboard_v3.js?v=2.9"></script>
 {% endblock %}

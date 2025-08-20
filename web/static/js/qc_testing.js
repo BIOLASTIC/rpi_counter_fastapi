@@ -1,140 +1,165 @@
-// web/static/js/qc_testing.js
+// rpi_counter_fastapi-apintrigation/web/static/js/qc_testing.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function () {
     const form = document.getElementById('qc-test-form');
-    const imageUpload = document.getElementById('image-upload');
     const submitBtn = document.getElementById('submit-btn');
     const spinner = document.getElementById('submit-spinner');
+    const imageUpload = document.getElementById('image-upload');
     const resultsArea = document.getElementById('results-area');
     const errorAlert = document.getElementById('error-alert');
     const jsonResponseEl = document.getElementById('json-response');
+    
     const canvas = document.getElementById('result-canvas');
     const ctx = canvas.getContext('2d');
-    let uploadedImage = null;
+    let originalImage = null;
 
-    // --- Element cache for details ---
-    const details = {
-        qc: document.getElementById('details-qc'),
-        category: document.getElementById('details-category'),
-        size: document.getElementById('details-size'),
-        defects: document.getElementById('details-defects'),
-    };
+    const get = (path, obj) => path.reduce((xs, x) => (xs && xs[x] != null) ? xs[x] : null, obj);
 
-    const AI_API_BASE_URL = 'http://192.168.88.97:8001/api/v1/inspection/single/upload';
-
-    imageUpload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                uploadedImage = new Image();
-                uploadedImage.onload = () => console.log('Image loaded for annotation');
-                uploadedImage.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+    // --- THIS IS THE CORRECTED DRAWING FUNCTION ---
+    function drawOBB(flatPoints, color, label, confidence) {
+        // 1. INPUT VALIDATION: Ensure we have a flat array of 8 numbers.
+        if (!flatPoints || flatPoints.length !== 8) {
+            console.error("Invalid OBB points received:", flatPoints);
+            return;
         }
-    });
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const imageFile = imageUpload.files[0];
-        const checks = Array.from(form.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
-        if (!imageFile || checks.length === 0) return showError('Please upload an image and select at least one check.');
-        setLoading(true);
-        hideError();
+        // 2. RESHAPE THE DATA: Convert the flat array into an array of [x, y] pairs.
+        const points = [];
+        for (let i = 0; i < flatPoints.length; i += 2) {
+            points.push([flatPoints[i], flatPoints[i+1]]);
+        }
+
+        // 3. SCALE POINTS: Adjust coordinates from the original image size to the displayed canvas size.
+        const scaleX = canvas.width / originalImage.naturalWidth;
+        const scaleY = canvas.height / originalImage.naturalHeight;
+        const scaledPoints = points.map(p => [p[0] * scaleX, p[1] * scaleY]);
+
+        // 4. DRAW THE POLYGON
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(scaledPoints[0][0], scaledPoints[0][1]);
+        for (let i = 1; i < scaledPoints.length; i++) {
+            ctx.lineTo(scaledPoints[i][0], scaledPoints[i][1]);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // 5. DRAW THE LABEL with a background for better visibility
+        ctx.fillStyle = color;
+        ctx.font = 'bold 20px sans-serif';
+        const fullLabel = `${label} (${(confidence * 100).toFixed(1)}%)`;
+        const textMetrics = ctx.measureText(fullLabel);
+        const textWidth = textMetrics.width;
+        const textHeight = 24; // Approximation of font height with padding
+        
+        const labelX = scaledPoints[0][0];
+        const labelY = scaledPoints[0][1] - textHeight - 5; // Position above the first point
+
+        ctx.fillRect(labelX, labelY, textWidth + 10, textHeight);
+        
+        ctx.fillStyle = '#ffffff'; // White text
+        ctx.fillText(fullLabel, labelX + 5, scaledPoints[0][1] - 10);
+    }
+    // --- END OF CORRECTION ---
+
+    function updateDetails(results) {
+        const qcStatus = get(['yolo11m_qc', 'detections', 0, 'class_name'], results) || '--';
+        const qcConfidence = get(['yolo11m_qc', 'detections', 0, 'confidence'], results);
+        const qcAngle = get(['yolo11m_qc', 'detections', 0, 'coordinates', 'rotated_box', 'angle_degrees'], results);
+        
+        const qcStatusEl = document.getElementById('details-qc-status');
+        qcStatusEl.textContent = qcStatus;
+        qcStatusEl.className = `status-${qcStatus}`;
+        document.getElementById('details-qc-confidence').textContent = qcConfidence ? `${(qcConfidence * 100).toFixed(1)}%` : '--';
+        document.getElementById('details-qc-angle').textContent = qcAngle ? `${qcAngle.toFixed(2)}°` : '--';
+
+        const categoryName = get(['yolo11m_categories', 'detections', 0, 'class_name'], results) || '--';
+        const categoryConfidence = get(['yolo11m_categories', 'detections', 0, 'confidence'], results);
+        const categoryAngle = get(['yolo11m_categories', 'detections', 0, 'coordinates', 'rotated_box', 'angle_degrees'], results);
+
+        document.getElementById('details-category-name').textContent = categoryName;
+        document.getElementById('details-category-confidence').textContent = categoryConfidence ? `${(categoryConfidence * 100).toFixed(1)}%` : '--';
+        document.getElementById('details-category-angle').textContent = categoryAngle ? `${categoryAngle.toFixed(2)}°` : '--';
+    }
+
+    form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        
+        spinner.style.display = 'inline-block';
+        submitBtn.disabled = true;
         resultsArea.style.display = 'none';
+        errorAlert.style.display = 'none';
+        originalImage = null;
+
+        const imageFile = imageUpload.files[0];
+        if (!imageFile) {
+            showError("Please select an image file.");
+            return;
+        }
+
+        const checkedModels = Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        if (checkedModels.length === 0) {
+            showError("Please select at least one model to run.");
+            return;
+        }
 
         const formData = new FormData();
         formData.append('image', imageFile);
-        formData.append('serial_number', `test-${Date.now()}`);
-        const params = new URLSearchParams();
-        checks.forEach(check => params.append('checks_to_perform', check));
+        checkedModels.forEach(model => formData.append('models', model));
 
         try {
-            const response = await fetch(`${AI_API_BASE_URL}?${params.toString()}`, { method: 'POST', body: formData });
+            const response = await fetch('/api/v1/analytics/qc-test/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
             }
+
             const results = await response.json();
-            displayResults(results);
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                originalImage = new Image();
+                originalImage.onload = function() {
+                    canvas.width = originalImage.naturalWidth;
+                    canvas.height = originalImage.naturalHeight;
+                    ctx.drawImage(originalImage, 0, 0);
+
+                    const qcDetection = get(['yolo11m_qc', 'detections', 0], results);
+                    if (qcDetection) {
+                        const color = qcDetection.class_name === 'ACCEPT' ? '#198754' : '#dc3545';
+                        drawOBB(qcDetection.coordinates.obb_points, color, qcDetection.class_name, qcDetection.confidence);
+                    }
+                    
+                    const catDetection = get(['yolo11m_categories', 'detections', 0], results);
+                     if (catDetection) {
+                        drawOBB(catDetection.coordinates.obb_points, '#0d6efd', catDetection.class_name, catDetection.confidence);
+                    }
+
+                    jsonResponseEl.textContent = JSON.stringify(results, null, 2);
+                    updateDetails(results);
+                    resultsArea.style.display = 'block';
+                }
+                originalImage.src = e.target.result;
+            }
+            reader.readAsDataURL(imageFile);
+
         } catch (error) {
             showError(error.message);
         } finally {
-            setLoading(false);
+            spinner.style.display = 'none';
+            submitBtn.disabled = false;
         }
     });
 
-    function displayResults(results) {
-        resultsArea.style.display = 'block';
-        jsonResponseEl.textContent = JSON.stringify(results, null, 2);
-        updateDetailsText(results); // Populate the text summary
-        if (uploadedImage) {
-            canvas.width = uploadedImage.width;
-            canvas.height = uploadedImage.height;
-            ctx.drawImage(uploadedImage, 0, 0);
-            drawAnnotations(results);
-        }
-    }
-
-    function updateDetailsText(results) {
-        const idResults = results.identification_results || {};
-        const qc = idResults.qc;
-        details.qc.textContent = qc ? qc.overall_status : 'N/A';
-        const category = idResults.category;
-        details.category.textContent = category ? `${category.detected_product_type} (${(category.confidence * 100).toFixed(1)}%)` : 'N/A';
-        const size = idResults.size;
-        details.size.textContent = (size && size.detected_product_size) ? size.detected_product_size : 'N/A';
-        const defects = idResults.defects && idResults.defects.defects ? idResults.defects.defects : [];
-        details.defects.textContent = defects.length > 0 ? `${defects.length} Found` : 'None Detected';
-    }
-
-    function drawAnnotations(results) {
-        const idResults = results.identification_results;
-        if (!idResults) return;
-
-        const drawBoundingBox = (boxData, label, color, thickness, labelInside = false) => {
-            if (!boxData) return;
-            const { x, y, width, height } = boxData;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = thickness;
-            ctx.strokeRect(x, y, width, height);
-            const fontScale = 1.0;
-            const font = `bold ${24 * fontScale}px sans-serif`;
-            ctx.font = font;
-            const textMetrics = ctx.measureText(label);
-            const textWidth = textMetrics.width;
-            const textHeight = 24 * fontScale;
-            if (labelInside) {
-                const textY = y + textHeight + 10;
-                ctx.fillStyle = color;
-                ctx.fillRect(x, y, textWidth + 20, textHeight + 20);
-                ctx.fillStyle = 'white';
-                ctx.fillText(label, x + 10, textY);
-            } else {
-                const textY = y - 10, bgY = y - textHeight - 20;
-                ctx.fillStyle = color;
-                ctx.fillRect(x, bgY, textWidth + 10, textHeight + 10);
-                ctx.fillStyle = 'white';
-                ctx.fillText(label, x + 5, textY);
-            }
-        };
-
-        const qcCheck = idResults.qc;
-        if (qcCheck && qcCheck.overall_status) drawBoundingBox(qcCheck.bounding_box, `Status: ${qcCheck.overall_status}`, qcCheck.overall_status === 'ACCEPT' ? 'lime' : 'red', 10, true);
-        const categoryCheck = idResults.category;
-        if (categoryCheck && categoryCheck.detected_product_type) drawBoundingBox(categoryCheck.bounding_box, `Type: ${categoryCheck.detected_product_type} (${(categoryCheck.confidence || 0).toFixed(2)})`, 'blue', 5);
-        const defects = (idResults.defects && idResults.defects.defects) ? idResults.defects.defects : [];
-        defects.forEach(defect => drawBoundingBox(defect.bounding_box, `Defect: ${defect.defect_type} (${(defect.confidence || 0).toFixed(2)})`, 'yellow', 3));
-    }
-
-    function setLoading(isLoading) {
-        submitBtn.disabled = isLoading;
-        spinner.style.display = isLoading ? 'inline-block' : 'none';
-    }
     function showError(message) {
-        errorAlert.textContent = message;
+        errorAlert.textContent = `Error: ${message}`;
         errorAlert.style.display = 'block';
+        spinner.style.display = 'none';
+        submitBtn.disabled = false;
     }
-    function hideError() { errorAlert.style.display = 'none'; }
 });

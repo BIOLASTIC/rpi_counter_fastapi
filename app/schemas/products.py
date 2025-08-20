@@ -1,4 +1,4 @@
-# rpi_counter_fastapi-dev2/app/schemas/products.py
+# rpi_counter_fastapi-apintrigation/app/schemas/products.py
 
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
@@ -17,11 +17,16 @@ class ProductBase(BaseModel):
     min_sensor_block_time_ms: Optional[int] = None
     max_sensor_block_time_ms: Optional[int] = None
 
-    # --- NEW FIELDS FOR DYNAMIC QC ---
     verify_category: bool = False
     verify_size: bool = False
     verify_defects: bool = False
     verify_ticks: bool = False
+
+    # --- NEW FIELDS FOR GEOMETRIC VALIDATION ---
+    target_angle: Optional[float] = None
+    angle_tolerance: Optional[float] = None
+    min_aspect_ratio: Optional[float] = None
+    max_aspect_ratio: Optional[float] = None
     # --- END OF NEW FIELDS ---
 
 class ProductCreate(ProductBase):
@@ -40,11 +45,16 @@ class ProductUpdate(BaseModel):
     min_sensor_block_time_ms: Optional[int] = None
     max_sensor_block_time_ms: Optional[int] = None
 
-    # --- NEW FIELDS FOR DYNAMIC QC ---
     verify_category: Optional[bool] = None
     verify_size: Optional[bool] = None
     verify_defects: Optional[bool] = None
     verify_ticks: Optional[bool] = None
+
+    # --- NEW FIELDS FOR GEOMETRIC VALIDATION ---
+    target_angle: Optional[float] = None
+    angle_tolerance: Optional[float] = None
+    min_aspect_ratio: Optional[float] = None
+    max_aspect_ratio: Optional[float] = None
     # --- END OF NEW FIELDS ---
 
 class ProductOut(ProductBase):

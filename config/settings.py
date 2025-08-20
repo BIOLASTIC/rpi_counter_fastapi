@@ -1,3 +1,5 @@
+# rpi_counter_fastapi-apintrigation/config/settings.py
+
 from functools import lru_cache
 from typing import Literal
 from pydantic import Field
@@ -42,6 +44,15 @@ class UsbCameraSettings(BaseCameraSettings):
     AUTOFOCUS: bool = True
     WHITE_BALANCE_TEMP: int = 0
 
+# --- NEW: Settings for the external AI API ---
+class AiApiSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix='AI_API_', case_sensitive=False)
+    BASE_URL: str = "http://192.168.88.97:3001"
+    QC_MODEL_ID: str = "yolo11m_qc"
+    CATEGORY_MODEL_ID: str = "yolo11m_categories"
+    SIZE_MODEL_ID: str = "yolo11m_size" # Example for future expansion
+    DEFECT_MODEL_ID: str = "yolo11m_defects" # Example for future expansion
+
 class OutputChannelSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='OUTPUTS_', case_sensitive=False)
     CONVEYOR: int = 0
@@ -74,7 +85,6 @@ class LoggingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='LOGGING_', case_sensitive=False)
     VERBOSE_LOGGING: bool = False
 
-# --- NEW: Settings for timed buzzer alerts ---
 class BuzzerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='BUZZER_', case_sensitive=False)
     MISMATCH_MS: int = Field(500, description="Buzzer duration in ms for a product size mismatch.")
@@ -86,7 +96,6 @@ class ConveyorSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='CONVEYOR_', case_sensitive=False)
     SPEED_M_PER_SEC: float = 0.5
     CAMERA_TO_SORTER_DISTANCE_M: float = 1.0
-    # --- NEW: Setting for the post-run stop delay ---
     CONVEYOR_AUTO_STOP_DELAY_SEC: int = Field(2, description="How many seconds the conveyor runs after the last box of a batch is counted before stopping.")
     MAX_TRANSIT_TIME_SEC: float = Field(15.0, gt=0, description="Max time for a product to travel from entry to exit before a failure is triggered.")
 
@@ -97,7 +106,7 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', case_sensitive=False)
 
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
-    PROJECT_VERSION: str = "10.0.0-No-AI"
+    PROJECT_VERSION: str = "11.0.0-YOLOv11"
     APP_ENV: Literal["development", "production"] = "development"
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
@@ -106,6 +115,7 @@ class AppSettings(BaseSettings):
 
 
     # Nested configuration objects
+    AI_API: AiApiSettings = AiApiSettings() # <-- ADD THIS
     CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()
     CAMERA_USB: UsbCameraSettings = UsbCameraSettings()
     SERVER: ServerSettings = ServerSettings()
@@ -117,7 +127,6 @@ class AppSettings(BaseSettings):
     ORCHESTRATION: OrchestrationSettings = OrchestrationSettings()
     LOGGING: LoggingSettings = LoggingSettings()
     CONVEYOR: ConveyorSettings = ConveyorSettings()
-    # --- NEW: Add the buzzer settings to the main config ---
     BUZZER: BuzzerSettings = BuzzerSettings()
 
 @lru_cache()

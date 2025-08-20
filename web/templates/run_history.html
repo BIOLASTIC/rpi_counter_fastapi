@@ -1,10 +1,9 @@
-<!-- rpi_counter_fastapi-dev2/web/templates/run_history.html -->
+<!-- rpi_counter_fastapi-apintrigation/web/templates/run_history.html -->
 
 {% extends "base.html" %}
 
 {% block content %}
 <style>
-    /* Add some styles for the new details section in the modal */
     .detection-details-grid {
         display: grid;
         grid-template-columns: auto 1fr;
@@ -20,6 +19,9 @@
         text-align: right;
         color: #6c757d;
     }
+    .status-ACCEPT { color: #198754; font-weight: bold; }
+    .status-REJECT { color: #dc3545; font-weight: bold; }
+    .validation-list { list-style: none; padding-left: 0; }
 </style>
 
 <div class="container-fluid">
@@ -85,7 +87,7 @@
     </div>
 </div>
 
-<!-- THIS IS THE NEW TEMPLATE for a single detection item -->
+<!-- --- UPDATED TEMPLATE FOR A SINGLE DETECTION ITEM --- -->
 <template id="detection-item-template">
     <div class="detection-item border-bottom pb-3 mb-3">
         <p class="small text-muted mb-1">
@@ -95,23 +97,40 @@
         <div class="row g-3">
             <div class="col-md-6">
                 <h6>Original Image</h6>
-                <img src="" class="img-fluid rounded original-image" alt="Original Image">
+                <a href="#" class="original-image-link" target="_blank">
+                    <img src="/static/images/placeholder.jpg" class="img-fluid rounded original-image" alt="Original Image">
+                </a>
             </div>
             <div class="col-md-6">
                 <h6>Annotated AI Result</h6>
-                <img src="" class="img-fluid rounded annotated-image" alt="Annotated Image">
+                 <a href="#" class="annotated-image-link" target="_blank">
+                    <img src="/static/images/placeholder.jpg" class="img-fluid rounded annotated-image" alt="Annotated Image">
+                </a>
             </div>
         </div>
-        <div class="detection-details-grid">
-            <div class="label">Quality Status:</div> <span class="details-qc">--</span>
-            <div class="label">Product Category:</div> <span class="details-category">--</span>
-            <div class="label">Product Size:</div> <span class="details-size">--</span>
-            <div class="label">Defects Found:</div> <span class="details-defects">--</span>
+        <div class="row mt-2">
+            <div class="col-md-7">
+                <h6>Detection Summary</h6>
+                <div class="detection-details-grid">
+                    <div class="label">QC Status:</div> <span class="details-qc-status">--</span>
+                    <div class="label">QC Confidence:</div> <span class="details-qc-confidence">--</span>
+                    <hr class="g-col-2 m-0">
+                    <div class="label">Category:</div> <span class="details-category-name">--</span>
+                    <div class="label">Category Confidence:</div> <span class="details-category-confidence">--</span>
+                </div>
+            </div>
+            <div class="col-md-5">
+                <h6>Geometric Validation</h6>
+                <ul class="list-group list-group-flush small validation-list">
+                    <!-- JS will populate this -->
+                </ul>
+            </div>
         </div>
     </div>
 </template>
+<!-- --- END OF UPDATE --- -->
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/run_history.js?v=1.5"></script>
+<script src="/static/js/run_history.js?v=2.0"></script>
 {% endblock %}

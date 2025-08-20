@@ -1,6 +1,6 @@
-# rpi_counter_fastapi-dev2/app/models/product.py
+# rpi_counter_fastapi-apintrigation/app/models/product.py
 
-from sqlalchemy import Integer, String, Text, Enum, Boolean
+from sqlalchemy import Integer, String, Text, Enum, Boolean, Float # <-- Add Float
 from sqlalchemy.orm import Mapped, mapped_column
 from enum import Enum as PyEnum
 
@@ -31,6 +31,12 @@ class Product(Base):
     verify_size: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     verify_defects: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     verify_ticks: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # --- NEW FIELDS FOR GEOMETRIC VALIDATION (DEEP ANALYSIS) ---
+    target_angle: Mapped[float] = mapped_column(Float, nullable=True)
+    angle_tolerance: Mapped[float] = mapped_column(Float, nullable=True)
+    min_aspect_ratio: Mapped[float] = mapped_column(Float, nullable=True)
+    max_aspect_ratio: Mapped[float] = mapped_column(Float, nullable=True)
     # --- END OF NEW FIELDS ---
 
     def __repr__(self) -> str:

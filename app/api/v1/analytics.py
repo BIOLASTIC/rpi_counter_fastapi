@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+# rpi_counter_fastapi-apintrigation/app/api/v1/analytics.py
+
+import asyncio # <--- THIS IS THE FIX
+from fastapi import APIRouter, Depends, Query, File, UploadFile, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
@@ -8,10 +11,62 @@ from datetime import datetime, timedelta, time
 import json
 import io
 import csv
+import httpx
+from pathlib import Path
 
 from app.models import get_async_session, RunLog, DetectionEventLog, Product, Operator, RunStatus
+from config import settings
 
 router = APIRouter()
+
+# --- NEW ENDPOINT FOR MANUAL QC TESTING ---
+@router.post("/qc-test/upload")
+async def handle_qc_test_upload(
+    image: UploadFile = File(...),
+    models: List[str] = Form(...)
+):
+    """
+    Acts as a proxy to the external AI API for the manual QC testing page.
+    This prevents CORS issues and keeps the AI API URL secure.
+    """
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File provided is not an image.")
+
+    image_bytes = await image.read()
+    
+    # Use a single httpx client for all requests in this function
+    async with httpx.AsyncClient(base_url=settings.AI_API.BASE_URL, timeout=20.0) as client:
+        tasks = []
+        for model_id in models:
+            # Prepare the multipart form data for each model
+            files = {"image": (image.filename, image_bytes, image.content_type)}
+            data = {"model_id": model_id, "serial_no": "MANUAL_TEST"}
+            
+            # Create a request task for each model
+            task = client.post("/predict", files=files, data=data)
+            tasks.append(task)
+        
+        try:
+            # Execute all API calls concurrently
+            responses = await asyncio.gather(*tasks)
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Could not connect to the AI service: {e}")
+
+    # Process responses and combine them
+    results = {}
+    for response in responses:
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"AI service returned an error: {response.text}"
+            )
+        data = response.json()
+        model_id = data.get("model_id")
+        results[model_id] = data
+
+    return results
+# --- END OF NEW ENDPOINT ---
+
 
 @router.get("/summary")
 async def get_analytics_summary(
@@ -24,6 +79,7 @@ async def get_analytics_summary(
     """
     Generates a comprehensive analytics report for a given date range with optional filters.
     """
+    # ... (rest of the file is unchanged)
     # 1. Base Query for Runs in the selected period
     run_query = (
         select(RunLog)
@@ -101,9 +157,13 @@ async def get_analytics_summary(
         if day_str in daily_trends:
             daily_trends[day_str]["items"] += 1
             if det.details:
-                qc_status = det.details.get("identification_results", {}).get("qc", {}).get("overall_status")
-                if qc_status == "ACCEPT": daily_trends[day_str]["pass"] += 1
-                elif qc_status == "REJECT": daily_trends[day_str]["fail"] += 1
+                # Updated to new nested structure
+                qc_summary = det.details.get("qc_summary", {})
+                if qc_summary.get("overall_status") == "ACCEPT":
+                    daily_trends[day_str]["pass"] += 1
+                elif qc_summary.get("overall_status") == "REJECT":
+                    daily_trends[day_str]["fail"] += 1
+
 
     for day, data in daily_trends.items():
         total_qc = data["pass"] + data["fail"]
@@ -127,14 +187,16 @@ async def get_analytics_summary(
     qc_pass, qc_fail, defect_counts = 0, 0, {}
     for detection in detections_in_period:
         if detection.details:
-            qc_status = detection.details.get("identification_results", {}).get("qc", {}).get("overall_status")
-            if qc_status == "ACCEPT": qc_pass += 1
-            elif qc_status == "REJECT": qc_fail += 1
+            qc_summary = detection.details.get("qc_summary", {})
+            if qc_summary.get("overall_status") == "ACCEPT":
+                qc_pass += 1
+            elif qc_summary.get("overall_status") == "REJECT":
+                qc_fail += 1
             
-            defects = detection.details.get("identification_results", {}).get("defects", {}).get("defects", [])
-            for defect in defects:
-                defect_type = defect.get("defect_type", "Unknown")
-                defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
+            defects_summary = detection.details.get("defects_summary", {})
+            for defect_type, count in defects_summary.get("defect_counts", {}).items():
+                defect_counts[defect_type] = defect_counts.get(defect_type, 0) + count
+
     
     top_defects = sorted(defect_counts.items(), key=lambda item: item[1], reverse=True)[:5]
     
@@ -199,17 +261,20 @@ async def export_analytics_csv(
     
     # Write Data
     for det in detections:
-        qc_details = det.details.get("identification_results", {}) if det.details else {}
-        qc_status = qc_details.get("qc", {}).get("overall_status", "N/A")
-        category = qc_details.get("category", {}).get("detected_product_type", "N/A")
-        size = qc_details.get("size", {}).get("detected_size", "N/A")
-        defect_count = len(qc_details.get("defects", {}).get("defects", []))
+        qc_summary = det.details.get("qc_summary", {}) if det.details else {}
+        category_summary = det.details.get("category_summary", {}) if det.details else {}
+        size_summary = det.details.get("size_summary", {}) if det.details else {}
+        defects_summary = det.details.get("defects_summary", {}) if det.details else {}
 
         writer.writerow([
             det.timestamp.isoformat(), det.serial_number, det.run.id, det.run.batch_code,
             det.run.operator.name if det.run.operator else "N/A",
             det.run.product.name if det.run.product else "N/A",
-            qc_status, category, size, defect_count, det.image_path
+            qc_summary.get("overall_status", "N/A"),
+            category_summary.get("detected_type", "N/A"),
+            size_summary.get("detected_size", "N/A"),
+            defects_summary.get("total_defects", 0),
+            det.image_path
         ])
 
     output.seek(0)
