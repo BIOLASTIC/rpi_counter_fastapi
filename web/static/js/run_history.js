@@ -1,199 +1,180 @@
-// rpi_counter_fastapi-apintrigation/web/static/js/run_history.js
+// rpi_counter_fastapi-apinaudio/web/static/js/run_history.js
 
-document.addEventListener('DOMContentLoaded', function() {
-    const historyTableBody = document.getElementById('history-table-body');
+document.addEventListener('DOMContentLoaded', function () {
+    const tableBody = document.getElementById('history-table-body');
     const filterForm = document.getElementById('filter-form');
-    const resetFilterBtn = document.getElementById('reset-filter-btn');
-    const productFilter = document.getElementById('filter-product');
-    const operatorFilter = document.getElementById('filter-operator');
+    const resetBtn = document.getElementById('reset-filter-btn');
 
+    // Modal elements
     const detectionsModal = new bootstrap.Modal(document.getElementById('detections-modal'));
-    const detectionsGridContainer = document.getElementById('detections-grid-container');
     const modalTitle = document.getElementById('detections-modal-title');
+    const modalSubtitle = document.getElementById('detections-modal-subtitle');
+    const modalGridContainer = document.getElementById('detections-grid-container');
     const downloadZipBtn = document.getElementById('download-run-zip-btn');
-    const detectionItemTemplate = document.getElementById('detection-item-template');
 
-    // Helper to safely access nested properties in the JSON response
-    const get = (path, obj) => path.reduce((xs, x) => (xs && xs[x] != null) ? xs[x] : null, obj);
+    async function fetchAndRenderHistory() {
+        const params = new URLSearchParams(new FormData(filterForm));
+        const startDate = document.getElementById('filter-start-date').value;
+        const endDate = document.getElementById('filter-end-date').value;
 
-    async function populateFilters() {
+        // Convert local datetime to ISO string for the query
+        if (startDate) params.set('start_date', new Date(startDate).toISOString());
+        if (endDate) params.set('end_date', new Date(endDate).toISOString());
+
         try {
-            const [productsRes, operatorsRes] = await Promise.all([
-                fetch('/api/v1/products/'),
-                fetch('/api/v1/operators/')
-            ]);
-            const products = await productsRes.json();
-            const operators = await operatorsRes.json();
-
-            productFilter.innerHTML = '<option value="">All Products</option>';
-            products.forEach(p => {
-                productFilter.insertAdjacentHTML('beforeend', `<option value="${p.id}">${p.name}</option>`);
-            });
-
-            operatorFilter.innerHTML = '<option value="">All Operators</option>';
-            operators.forEach(o => {
-                operatorFilter.insertAdjacentHTML('beforeend', `<option value="${o.id}">${o.name}</option>`);
-            });
-        } catch (error) {
-            console.error('Failed to populate filters:', error);
-        }
-    }
-
-    async function fetchAndRenderHistory(params = {}) {
-        historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
-        const query = new URLSearchParams(params).toString();
-        try {
-            const response = await fetch(`/api/v1/run-history/?${query}`);
-            if (!response.ok) throw new Error('Failed to fetch run history');
+            const response = await fetch(`/api/v1/run-history/?${params.toString()}`);
             const runs = await response.json();
-            renderHistory(runs);
+            renderTable(runs);
         } catch (error) {
-            console.error('Error fetching run history:', error);
-            historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Failed to load run history.</td></tr>';
+            console.error("Failed to fetch run history:", error);
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Error loading data.</td></tr>';
         }
     }
 
-    function renderHistory(runs) {
-        historyTableBody.innerHTML = '';
-        if (runs.length === 0) {
-            historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center">No runs found for the selected filters.</td></tr>';
+    function renderTable(runs) {
+        if (!runs || runs.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No run history found for the selected filters.</td></tr>';
             return;
         }
 
-        runs.forEach(run => {
-            const startTime = new Date(run.start_timestamp).toLocaleString();
-            const statusBadge = `<span class="badge bg-${getStatusColor(run.status)}">${run.status}</span>`;
-            const duration = run.duration_seconds ? `${run.duration_seconds}s` : 'N/A';
-            const target = run.object_profile_snapshot?.target_count > 0 ? run.object_profile_snapshot.target_count : '∞';
-
-            const row = `
-                <tr>
-                    <td>${startTime}</td>
-                    <td>${statusBadge}</td>
-                    <td>${duration}</td>
-                    <td>${run.batch_code}</td>
-                    <td>${run.product?.name || 'N/A'}</td>
-                    <td>${run.operator?.name || 'N/A'}</td>
-                    <td class="text-end">${run.detected_items_count} / ${target}</td>
-                    <td class="text-end">
-                        <button class="btn btn-sm btn-outline-primary view-detections-btn" data-run-id="${run.id}" data-batch-code="${run.batch_code}">
-                            <i class="bi bi-images"></i> View
-                        </button>
-                    </td>
-                </tr>
-            `;
-            historyTableBody.insertAdjacentHTML('beforeend', row);
-        });
+        tableBody.innerHTML = runs.map(run => `
+            <tr>
+                <td>${run.start_timestamp_local || new Date(run.start_timestamp).toLocaleString()}</td>
+                <td><span class="badge ${getStatusClass(run.status)}">${run.status}</span></td>
+                <td>${run.duration_seconds !== null ? `${run.duration_seconds}s` : 'N/A'}</td>
+                <td>${run.batch_code}</td>
+                <td>${run.product ? run.product.name : 'N/A'}</td>
+                <td>${run.operator ? run.operator.name : 'N/A'}</td>
+                <td class="text-end">${run.detected_items_count} / ${run.object_profile_snapshot.target_count || '∞'}</td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-primary view-detections-btn" data-run-id="${run.id}" data-batch-code="${run.batch_code}">
+                        View
+                    </button>
+                </td>
+            </tr>
+        `).join('');
     }
 
-    async function openDetectionsModal(runId, batchCode) {
-        modalTitle.textContent = `Detections for Run #${runId} (${batchCode})`;
-        detectionsGridContainer.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    function getStatusClass(status) {
+        switch (status) {
+            case 'Completed': return 'bg-success';
+            case 'Failed': return 'bg-danger';
+            case 'Aborted by User': return 'bg-warning text-dark';
+            case 'Running': return 'bg-info text-dark';
+            default: return 'bg-secondary';
+        }
+    }
+
+    async function showDetectionsModal(runId, batchCode) {
+        modalTitle.textContent = `Detection Events for Batch: ${batchCode}`;
+        modalGridContainer.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
         downloadZipBtn.href = `/api/v1/run-history/${runId}/download-images`;
         detectionsModal.show();
 
         try {
             const response = await fetch(`/api/v1/run-history/${runId}/detections`);
-            if (!response.ok) throw new Error('Failed to load detection events.');
             const detections = await response.json();
+            renderDetections(detections);
+        } catch (error) {
+            console.error('Failed to fetch detections:', error);
+            modalGridContainer.innerHTML = '<div class="alert alert-danger">Could not load detection events.</div>';
+        }
+    }
 
-            detectionsGridContainer.innerHTML = '';
-            if (detections.length === 0) {
-                detectionsGridContainer.innerHTML = '<p class="text-center text-muted">No detection events were recorded for this run.</p>';
-                return;
+    function renderDetections(detections) {
+        if (!detections || detections.length === 0) {
+            modalGridContainer.innerHTML = '<p class="text-center text-muted">No detection images were recorded for this run.</p>';
+            return;
+        }
+
+        modalGridContainer.innerHTML = '';
+        const template = document.getElementById('detection-item-template');
+
+        detections.forEach(det => {
+            const clone = template.content.cloneNode(true);
+            clone.querySelector('.serial-number').textContent = det.serial_number;
+            clone.querySelector('.timestamp').textContent = new Date(det.timestamp).toLocaleString();
+
+            if (det.image_path) {
+                clone.querySelector('.original-image-link').href = det.image_path;
+                clone.querySelector('.original-image').src = det.image_path;
+            }
+            if (det.annotated_image_path) {
+                clone.querySelector('.annotated-image-link').href = det.annotated_image_path;
+                clone.querySelector('.annotated-image').src = det.annotated_image_path;
             }
 
-            detections.forEach(det => {
-                const itemClone = detectionItemTemplate.content.cloneNode(true);
-                const details = det.details || {};
+            const qcSummary = det.details?.qc_summary || {};
+            const catSummary = det.details?.category_summary || {};
+            const validationChecks = det.details?.validation_results?.checks || [];
 
-                itemClone.querySelector('.serial-number').textContent = det.serial_number;
-                itemClone.querySelector('.timestamp').textContent = new Date(det.timestamp).toLocaleString();
-                
-                const originalImg = itemClone.querySelector('.original-image');
-                originalImg.src = det.image_path || '/static/images/placeholder.jpg';
-                itemClone.querySelector('.original-image-link').href = det.image_path || '#';
+            const qcStatusEl = clone.querySelector('.details-qc-status');
+            qcStatusEl.textContent = qcSummary.overall_status || 'N/A';
+            qcStatusEl.className = `details-qc-status status-${qcSummary.overall_status}`;
 
-                const annotatedImg = itemClone.querySelector('.annotated-image');
-                annotatedImg.src = det.annotated_image_path || det.image_path || '/static/images/placeholder.jpg';
-                itemClone.querySelector('.annotated-image-link').href = det.annotated_image_path || '#';
+            clone.querySelector('.details-qc-confidence').textContent = qcSummary.confidence ? `${(qcSummary.confidence * 100).toFixed(1)}%` : '--';
+            clone.querySelector('.details-category-name').textContent = catSummary.detected_type || 'N/A';
+            clone.querySelector('.details-category-confidence').textContent = catSummary.confidence ? `${(catSummary.confidence * 100).toFixed(1)}%` : '--';
 
-                // Populate Summary
-                const qcStatus = get(['qc_summary', 'overall_status'], details) || 'N/A';
-                const qcStatusEl = itemClone.querySelector('.details-qc-status');
-                qcStatusEl.textContent = qcStatus;
-                qcStatusEl.className = `details-qc-status status-${qcStatus}`;
+            const validationList = clone.querySelector('.validation-list');
+            validationList.innerHTML = '';
+            if (validationChecks.length > 0) {
+                validationChecks.forEach(check => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    li.innerHTML = `
+                        <span>${check.check_type}: <span class="fw-bold">${check.value}</span></span>
+                        <span class="badge ${check.status === 'PASS' ? 'bg-success' : 'bg-danger'}">${check.status}</span>
+                    `;
+                    validationList.appendChild(li);
+                });
+            } else {
+                validationList.innerHTML = '<li class="list-group-item text-muted small">No geometric validation performed.</li>';
+            }
+            
+            modalGridContainer.appendChild(clone);
+        });
+    }
+    
+    async function populateFilters() {
+        try {
+            const [operatorsRes, productsRes] = await Promise.all([
+                fetch('/api/v1/operators/'),
+                fetch('/api/v1/products/')
+            ]);
+            const operators = await operatorsRes.json();
+            const products = await productsRes.json();
 
-                const qcConfidence = get(['qc_summary', 'confidence'], details);
-                itemClone.querySelector('.details-qc-confidence').textContent = qcConfidence ? `${(qcConfidence * 100).toFixed(1)}%` : 'N/A';
-
-                const categoryName = get(['category_summary', 'detected_type'], details) || 'N/A';
-                itemClone.querySelector('.details-category-name').textContent = categoryName;
-                
-                const categoryConfidence = get(['category_summary', 'confidence'], details);
-                itemClone.querySelector('.details-category-confidence').textContent = categoryConfidence ? `${(categoryConfidence * 100).toFixed(1)}%` : 'N/A';
-                
-                // Populate Validation List
-                const validationList = itemClone.querySelector('.validation-list');
-                validationList.innerHTML = ''; // Clear default
-                const validationChecks = get(['validation_results', 'checks'], details);
-                if (validationChecks && validationChecks.length > 0) {
-                    validationChecks.forEach(check => {
-                        const isPass = check.status === 'PASS';
-                        const icon = isPass ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-danger"></i>';
-                        const listItem = `
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>${icon} ${check.check_type}</div>
-                                <span class="badge ${isPass ? 'bg-success' : 'bg-danger'}">${check.value}</span>
-                            </li>`;
-                        validationList.insertAdjacentHTML('beforeend', listItem);
-                    });
-                } else {
-                     validationList.innerHTML = '<li class="list-group-item text-muted small">No geometric checks ran.</li>';
-                }
-
-                detectionsGridContainer.appendChild(itemClone);
+            const operatorFilter = document.getElementById('filter-operator');
+            operatorFilter.innerHTML = '<option value="">All Operators</option>';
+            operators.forEach(op => {
+                operatorFilter.innerHTML += `<option value="${op.id}">${op.name}</option>`;
             });
 
+            const productFilter = document.getElementById('filter-product');
+            productFilter.innerHTML = '<option value="">All Products</option>';
+            products.forEach(p => {
+                productFilter.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+            });
         } catch (error) {
-            console.error(error);
-            detectionsGridContainer.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+            console.error("Failed to populate filters:", error);
         }
     }
 
-    function getStatusColor(status) {
-        switch (status) {
-            case 'Completed': return 'success';
-            case 'Failed': return 'danger';
-            case 'Aborted by User': return 'warning';
-            case 'Running': return 'primary';
-            default: return 'secondary';
-        }
-    }
-
-    filterForm.addEventListener('submit', function(e) {
+    filterForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const params = {
-            start_date: document.getElementById('filter-start-date').value,
-            end_date: document.getElementById('filter-end-date').value,
-            product_id: productFilter.value,
-            operator_id: operatorFilter.value,
-            batch_code: document.getElementById('filter-batch-code').value.trim()
-        };
-        // Remove empty params
-        Object.keys(params).forEach(key => params[key] === '' && delete params[key]);
-        fetchAndRenderHistory(params);
+        fetchAndRenderHistory();
     });
 
-    resetFilterBtn.addEventListener('click', () => {
+    resetBtn.addEventListener('click', () => {
         filterForm.reset();
         fetchAndRenderHistory();
     });
 
-    historyTableBody.addEventListener('click', (e) => {
-        const viewBtn = e.target.closest('.view-detections-btn');
-        if (viewBtn) {
-            openDetectionsModal(viewBtn.dataset.runId, viewBtn.dataset.batchCode);
+    tableBody.addEventListener('click', (e) => {
+        const button = e.target.closest('.view-detections-btn');
+        if (button) {
+            showDetectionsModal(button.dataset.runId, button.dataset.batchCode);
         }
     });
 

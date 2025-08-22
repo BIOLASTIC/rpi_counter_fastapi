@@ -1,4 +1,4 @@
-<!-- rpi_counter_fastapi-apintrigation/web/templates/run_history.html -->
+<!-- rpi_counter_fastapi-apinaudio/web/templates/run_history.html -->
 
 {% extends "base.html" %}
 
@@ -46,7 +46,8 @@
                 <table class="table table-hover small">
                     <thead>
                         <tr>
-                            <th>Start Time (UTC)</th>
+                            <!-- THIS IS THE FIX: Changed header and will use local time -->
+                            <th>Start Time</th>
                             <th>Status</th>
                             <th>Duration</th>
                             <th>Batch Code</th>
@@ -65,7 +66,7 @@
     </div>
 </div>
 
-<!-- Modal for showing detection events -->
+<!-- (The rest of the file is unchanged) -->
 <div class="modal fade" id="detections-modal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -80,14 +81,12 @@
                         <i class="bi bi-file-earmark-zip-fill me-2"></i>Download Original Images as ZIP
                     </a>
                 </div>
-                <!-- This container will be populated by JS -->
                 <div id="detections-grid-container" class="bg-light p-3 rounded"></div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- --- UPDATED TEMPLATE FOR A SINGLE DETECTION ITEM --- -->
 <template id="detection-item-template">
     <div class="detection-item border-bottom pb-3 mb-3">
         <p class="small text-muted mb-1">
@@ -122,15 +121,13 @@
             <div class="col-md-5">
                 <h6>Geometric Validation</h6>
                 <ul class="list-group list-group-flush small validation-list">
-                    <!-- JS will populate this -->
                 </ul>
             </div>
         </div>
     </div>
 </template>
-<!-- --- END OF UPDATE --- -->
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/run_history.js?v=2.0"></script>
+<script src="/static/js/run_history.js?v=2.1"></script>
 {% endblock %}

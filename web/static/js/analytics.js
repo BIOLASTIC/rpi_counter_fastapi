@@ -1,4 +1,4 @@
-// rpi_counter_fastapi-apintrigation/web/static/js/analytics.js
+// rpi_counter_fastapi-apinaudio/web/static/js/analytics.js
 
 document.addEventListener('DOMContentLoaded', function () {
     const startDateInput = document.getElementById('start-date');
@@ -137,33 +137,41 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // Top Products Table
         const topProductsTable = document.getElementById('top-products-table').querySelector('tbody');
-        topProductsTable.innerHTML = data.top_5_products.map(p => `<tr><td>${p[0]}</td><td class="text-end">${p[1].toLocaleString()}</td></tr>`).join('');
+        topProductsTable.innerHTML = data.top_5_products.map(p => `<tr><td>${p[0]}</td><td class="text-end">${p[1].toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2" class="text-center">No data available</td></tr>';
         
         // Top Defects Table
         const topDefectsTable = document.getElementById('top-defects-table').querySelector('tbody');
-        topDefectsTable.innerHTML = data.quality_control.top_5_defects.map(d => `<tr><td>${d[0]}</td><td class="text-end">${d[1].toLocaleString()}</td></tr>`).join('');
+        topDefectsTable.innerHTML = data.quality_control.top_5_defects.map(d => `<tr><td>${d[0]}</td><td class="text-end">${d[1].toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2" class="text-center">No data available</td></tr>';
     }
 
     function setQuickFilter(range) {
-        const now = new Date();
-        let start = new Date();
-        const end = new Date();
-
-        // Set end time to now
-        endDateInput.value = end.toISOString().slice(0, 16);
+        const timeZone = 'Asia/Kolkata';
+        const nowInLocalTZ = new Date(new Date().toLocaleString('en-US', { timeZone }));
+        
+        let start = new Date(nowInLocalTZ);
+        const end = new Date(nowInLocalTZ);
 
         if (range === 'today') {
             start.setHours(0, 0, 0, 0);
         } else if (range === 'week') {
-            const dayOfWeek = now.getDay(); // Sunday = 0, Monday = 1, etc.
-            start.setDate(now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Adjust to start of week (Monday)
+            const dayOfWeek = start.getDay();
+            const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday
+            start.setDate(diff);
             start.setHours(0, 0, 0, 0);
         } else if (range === 'month') {
             start.setDate(1);
             start.setHours(0, 0, 0, 0);
         }
         
-        startDateInput.value = start.toISOString().slice(0, 16);
+        // Helper to format date for <input type="datetime-local">
+        const toLocalISOString = (date) => {
+            const pad = (num) => (num < 10 ? '0' : '') + num;
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        };
+
+        startDateInput.value = toLocalISOString(start);
+        endDateInput.value = toLocalISOString(end);
+        
         fetchAnalyticsData();
     }
 
@@ -181,11 +189,8 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location.href = `/api/v1/analytics/export-csv?${params.toString()}`;
     });
 
-    // --- THIS IS THE FIX ---
-    // On initial load, fetch filter options and then immediately
-    // set the filter to "This Week" and fetch the data.
+    // Initialize the page
     fetchFilterOptions().then(() => {
-        setQuickFilter('week'); // Changed from 'today' to 'week' for a better default
+        setQuickFilter('today'); // Default to "Today" in Asia/Kolkata
     });
-    // --- END OF FIX ---
 });

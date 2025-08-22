@@ -1,11 +1,11 @@
-# rpi_counter_fastapi-apintrigation/config/settings.py
+# rpi_counter_fastapi-apinaudio/config/settings.py
 
 from functools import lru_cache
 from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# --- Nested Settings Classes ---
+# --- Nested Settings Classes (Unchanged) ---
 
 class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='SERVER_', case_sensitive=False)
@@ -44,14 +44,13 @@ class UsbCameraSettings(BaseCameraSettings):
     AUTOFOCUS: bool = True
     WHITE_BALANCE_TEMP: int = 0
 
-# --- NEW: Settings for the external AI API ---
 class AiApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='AI_API_', case_sensitive=False)
     BASE_URL: str = "http://192.168.88.97:3001"
     QC_MODEL_ID: str = "yolo11m_qc"
     CATEGORY_MODEL_ID: str = "yolo11m_categories"
-    SIZE_MODEL_ID: str = "yolo11m_size" # Example for future expansion
-    DEFECT_MODEL_ID: str = "yolo11m_defects" # Example for future expansion
+    SIZE_MODEL_ID: str = "yolo11m_size"
+    DEFECT_MODEL_ID: str = "yolo11m_defects"
 
 class OutputChannelSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='OUTPUTS_', case_sensitive=False)
@@ -108,14 +107,20 @@ class AppSettings(BaseSettings):
     PROJECT_NAME: str = "Raspberry Pi 5 Box Counter System"
     PROJECT_VERSION: str = "11.0.0-YOLOv11"
     APP_ENV: Literal["development", "production"] = "development"
+    
+    # --- THIS IS THE DEFINITIVE FIX ---
+    # Add the TIMEZONE field here so Pydantic knows to load it from the .env file.
+    # We provide "UTC" as a safe default if it's ever missing.
+    TIMEZONE: str = "UTC"
+    # --- END OF FIX ---
+    
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
     CAMERA_CAPTURES_DIR: str = "web/static/captures"
     UI_ANIMATION_TRANSIT_TIME_SEC: int = Field(5, gt=0)
 
-
     # Nested configuration objects
-    AI_API: AiApiSettings = AiApiSettings() # <-- ADD THIS
+    AI_API: AiApiSettings = AiApiSettings()
     CAMERA_RPI: RpiCameraSettings = RpiCameraSettings()
     CAMERA_USB: UsbCameraSettings = UsbCameraSettings()
     SERVER: ServerSettings = ServerSettings()
