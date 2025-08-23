@@ -3,7 +3,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=3.0"> <!-- Version bumped -->
+<link rel="stylesheet" href="/static/css/dashboard_v3.css?v=3.5"> <!-- Version bumped -->
 
 <div class="dashboard-container">
 
@@ -17,12 +17,11 @@
         <button class="btn btn-warning" id="acknowledge-alarm-btn">Acknowledge</button>
     </div>
 
-    <!-- NEW: Countdown Timer Block (hidden by default) -->
+    <!-- Countdown Timer Block -->
     <div class="grid-card" id="countdown-timer-card" style="display: none; grid-column: 1 / 13; background-color: var(--accent-blue); color: white; text-align: center;">
         <h4 style="margin: 0; font-size: 1.2rem;">Next batch starts in...</h4>
         <p id="countdown-timer" style="font-size: 3rem; font-weight: 700; margin: 0;">--:--</p>
     </div>
-    <!-- END NEW BLOCK -->
 
     <!-- Live Process View Card -->
     <div class="grid-card animation-card">
@@ -55,8 +54,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- (The rest of the file remains unchanged) -->
     
     <div class="grid-card feeds-card">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -109,23 +106,27 @@
     <div class="grid-card system-status-card">
          <h3 class="card-title"><i class="bi bi-motherboard"></i> System Control Panel</h3>
          <div class="system-status-grid">
-             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div><div class="status-badge" id="status-sensor-1">clear</div></div>
-             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div><div class="status-badge" id="status-sensor-2">clear</div></div>
+             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-down-right-circle"></i> Sensor 1 (Entry)</div><div class="status-badge" id="status-sensor-1">--</div></div>
+             <div class="status-item"><div class="status-label"><i class="bi bi-arrow-up-right-circle"></i> Sensor 2 (Exit)</div><div class="status-badge" id="status-sensor-2">--</div></div>
              <div class="status-item"><div class="status-label"><i class="bi bi-cpu"></i> IO Module</div><div class="status-badge" id="status-io-module">--</div></div>
              <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-fast-forward-fill"></i> Conveyor</div><label class="toggle-switch"><input type="checkbox" data-control-name="conveyor"><span class="toggle-slider"></span></label></div>
              <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-sign-stop-fill"></i> Gate</div><label class="toggle-switch"><input type="checkbox" data-control-name="gate"><span class="toggle-slider"></span></label></div>
              <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-exclude"></i> Diverter</div><label class="toggle-switch"><input type="checkbox" data-control-name="diverter"><span class="toggle-slider"></span></label></div>
-             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light</div><label class="toggle-switch"><input type="checkbox" data-control-name="camera_light"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill text-success"></i> Green LED</div><label class="toggle-switch"><input type="checkbox" data-control-name="led_green"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill text-danger"></i> Red LED</div><label class="toggle-switch"><input type="checkbox" data-control-name="led_red"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb-fill"></i> Camera Light 1</div><label class="toggle-switch"><input type="checkbox" data-control-name="camera_light"><span class="toggle-slider"></span></label></div>
+             <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-lightbulb"></i> Camera Light 2</div><label class="toggle-switch"><input type="checkbox" data-control-name="camera_light_two"><span class="toggle-slider"></span></label></div>
              <div class="status-item manual-control-toggle"><div class="status-label"><i class="bi bi-bell-fill"></i> Buzzer</div><label class="toggle-switch"><input type="checkbox" data-control-name="buzzer"><span class="toggle-slider"></span></label></div>
          </div>
     </div>
 </div>
 
+<!-- Modals -->
 <div class="modal fade" id="pre-run-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="pre-run-modal-title">Pre-Run Checklist</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="pre-run-input-view"><p class="text-muted">Please provide the following details before starting the run.</p><div class="mb-3"><label for="operator-select" class="form-label">Operator*</label><select id="operator-select" class="form-select" required></select></div><div class="mb-3"><label for="batch-code-input" class="form-label">Batch Code*</label><input type="text" id="batch-code-input" class="form-control" required></div><div class="d-flex justify-content-end"><button type="button" class="btn btn-primary" id="review-run-btn">Review Run</button></div></div><div id="pre-run-confirm-view" style="display: none;"><h6>Please confirm the following run details:</h6><ul class="list-group"><li class="list-group-item"><strong>Operator:</strong> <span id="confirm-operator"></span></li><li class="list-group-item"><strong>Batch Code:</strong> <span id="confirm-batch-code"></span></li><li class="list-group-item"><strong>Recipe:</strong> <span id="confirm-recipe"></span></li><li class="list-group-item"><strong>Target:</strong> <span id="confirm-target"></span></li></ul><div class="alert alert-warning mt-3">This will start the conveyor belt and begin the production run.</div><div class="d-flex justify-content-between mt-3"><button type="button" class="btn btn-secondary" id="go-back-btn">Go Back</button><button type="button" class="btn btn-success" id="start-final-run-btn">START FINAL RUN</button></div></div></div></div></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard_v3.js?v=3.0"></script>
+<script src="/static/js/dashboard_v3.js?v=3.5"></script>
 {% endblock %}

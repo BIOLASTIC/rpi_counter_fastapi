@@ -14,8 +14,10 @@ router = APIRouter()
 def get_modbus_controller(request: Request) -> AsyncModbusController:
     return request.app.state.modbus_controller
 
+# --- THIS IS THE FIX: ADD THE SECOND CAMERA LIGHT ---
 # Define the literal types for valid output names from settings
-OutputPinName = Literal["conveyor", "gate", "diverter", "led_green", "led_red", "buzzer", "camera_light"]
+OutputPinName = Literal["conveyor", "gate", "diverter", "led_green", "led_red", "buzzer", "camera_light", "camera_light_two"]
+# --- END OF FIX ---
 
 @router.post("/toggle/{name}", status_code=200)
 async def toggle_output_by_name(
@@ -26,7 +28,6 @@ async def toggle_output_by_name(
     Toggles the state of any configured output coil (Relay, LED, Buzzer).
     Returns the new state ('ON' or 'OFF').
     """
-    # When using Path with a Literal, FastAPI passes the string value directly.
     output_name_str = name
 
     address = io.get_output_address(output_name_str)
@@ -41,10 +42,23 @@ async def toggle_output_by_name(
          raise HTTPException(status_code=500, detail=f"Address {address} for '{output_name_str}' is out of bounds for the reported coils.")
 
     current_state = all_coils[address]
+    
+    # --- THIS IS THE FIX: Invert logic for NC-wired lights ---
+    # For the camera lights, the logic is inverted. The UI sends a command to achieve a logical state (e.g., "turn ON").
+    # If the light is ON, its relay coil is actually OFF (False). To turn it ON, we need to set the coil to OFF.
+    # However, the toggle endpoint is simpler: it just flips the current state. The UI state will be corrected
+    # by the `system_service` reporting the correct logical state.
     new_state = not current_state
+    # --- END OF FIX ---
 
     success = await io.write_coil(address, new_state)
     if not success:
         raise HTTPException(status_code=503, detail="Failed to write new coil state to Modbus device.")
+        
+    # For NC lights, the new logical state is the inverse of the coil's new physical state.
+    if name in ["camera_light", "camera_light_two"]:
+        final_logical_state = not new_state
+    else:
+        final_logical_state = new_state
 
-    return {"output": output_name_str, "new_state": "ON" if new_state else "OFF"}
+    return {"output": output_name_str, "new_state": "ON" if final_logical_state else "OFF"}

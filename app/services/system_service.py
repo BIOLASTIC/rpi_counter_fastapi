@@ -49,9 +49,7 @@ class AsyncSystemService:
         This provides a comprehensive system state reset.
         """
         print("System Service: Full system reset initiated.")
-        # First, stop all hardware and reset the run state
         await self._orchestration_service.stop_run()
-        # Then, clear the detection service's internal state (in-flight objects, etc.)
         await self._detection_service.reset_state()
 
     async def get_system_status(self) -> Dict:
@@ -96,7 +94,12 @@ class AsyncSystemService:
                 "led_green_status": get_output_state("led_green"),
                 "led_red_status": get_output_state("led_red"),
                 "buzzer_status": get_output_state("buzzer"),
+                # --- THIS IS THE DEFINITIVE FIX ---
+                # The status sent to the UI now directly reflects the relay coil's state.
+                # The incorrect 'not' inversion has been removed.
                 "camera_light_status": get_output_state("camera_light"),
+                "camera_light_two_status": get_output_state("camera_light_two"),
+                # --- END OF FIX ---
                 "in_flight_count": self._detection_service.get_in_flight_count(),
             }
         except Exception as e:
@@ -111,4 +114,8 @@ class AsyncSystemService:
         await self._io.write_coil(self._output_config.get("DIVERTER"), False)
         await self._io.write_coil(self._output_config.get("LED_GREEN"), False)
         await self._io.write_coil(self._output_config.get("LED_RED"), True)
+        # --- THIS IS THE DEFINITIVE FIX ---
+        # To turn the lights OFF, their relay coils must be de-energized (False).
         await self._io.write_coil(self._output_config.get("CAMERA_LIGHT"), False)
+        await self._io.write_coil(self._output_config.get("CAMERA_LIGHT_TWO"), False)
+        # --- END OF FIX ---

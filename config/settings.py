@@ -61,6 +61,9 @@ class OutputChannelSettings(BaseSettings):
     LED_RED: int = 4
     CAMERA_LIGHT: int = 5
     BUZZER: int = 6
+    # --- THIS IS THE FIX: ADD THE SECOND CAMERA LIGHT ---
+    CAMERA_LIGHT_TWO: int = 7 # Default to channel 7, can be overridden in .env
+    # --- END OF FIX ---
 
 class ModbusSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='MODBUS_', case_sensitive=False)
@@ -108,11 +111,7 @@ class AppSettings(BaseSettings):
     PROJECT_VERSION: str = "11.0.0-YOLOv11"
     APP_ENV: Literal["development", "production"] = "development"
     
-    # --- THIS IS THE DEFINITIVE FIX ---
-    # Add the TIMEZONE field here so Pydantic knows to load it from the .env file.
-    # We provide "UTC" as a safe default if it's ever missing.
     TIMEZONE: str = "UTC"
-    # --- END OF FIX ---
     
     CAMERA_MODE: Literal['rpi', 'usb', 'both', 'none'] = 'both'
     CAMERA_TRIGGER_DELAY_MS: int = 100
