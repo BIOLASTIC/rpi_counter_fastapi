@@ -40,10 +40,6 @@ class AsyncModbusController:
             self.health_status = ModbusHealthStatus.DISCONNECTED
             self._is_connected = False
             
-            # --- THE DEFINITIVE FIX IS HERE ---
-            # The API sends lowercase names (e.g., 'camera_light'). The original code created a map
-            # with uppercase keys ('CAMERA_LIGHT'), causing the lookup to fail.
-            # This comprehension creates the map with lowercase keys to ensure a match.
             self._output_name_to_address_map = {
                 k.lower(): v for k, v in settings.OUTPUTS.model_dump().items()
             }
@@ -60,7 +56,6 @@ class AsyncModbusController:
         return cls._instance
 
     def get_output_address(self, name: str) -> Optional[int]:
-        # Now, the lookup `name.lower()` will correctly find keys like 'camera_light' in our map.
         return self._output_name_to_address_map.get(name.lower())
 
     async def connect(self) -> bool:
@@ -100,20 +95,17 @@ class AsyncModbusController:
             )
             if result.isError(): raise ModbusIOException(f"Modbus error on input read: {result}")
             
-            # --- THE BUG FIX IS HERE ---
-            # The library might return a list shorter than 4. We must pad it.
-            # The default state for an NPN sensor input is HIGH (True).
             bits = result.bits
             while len(bits) < 4:
                 bits.append(True)
             return bits[:4]
-            # --- END OF FIX ---
-
-        except (ConnectionException, ModbusIOException, asyncio.TimeoutError) as e:
+        # --- THIS IS THE FIX: Catch any exception to ensure cleanup ---
+        except Exception as e:
             print(f"Modbus read_digital_inputs failed: {e}")
             self.health_status = ModbusHealthStatus.ERROR
             await self.disconnect()
             return None
+        # --- END OF FIX ---
 
     async def read_coils(self) -> Optional[List[bool]]:
         """Reads the 8 relay statuses from the USR-IO8000 (Slave ID 2). FC=1, Address=0, Quantity=8."""
@@ -124,19 +116,17 @@ class AsyncModbusController:
             )
             if result.isError(): raise ModbusIOException(f"Modbus error on coil read: {result}")
 
-            # --- APPLYING THE SAME FIX FOR ROBUSTNESS ---
-            # The default state for an output coil is OFF (False).
             bits = result.bits
             while len(bits) < 8:
                 bits.append(False)
             return bits[:8]
-            # --- END OF FIX ---
-
-        except (ConnectionException, ModbusIOException, asyncio.TimeoutError) as e:
+        # --- THIS IS THE FIX: Catch any exception to ensure cleanup ---
+        except Exception as e:
             print(f"Modbus read_coils failed: {e}")
             self.health_status = ModbusHealthStatus.ERROR
             await self.disconnect()
             return None
+        # --- END OF FIX ---
 
     async def write_coil(self, address: int, state: bool) -> bool:
         """Writes a single coil (relay) on the USR-IO8000 (Slave ID 2). FC=5."""
@@ -147,8 +137,10 @@ class AsyncModbusController:
             )
             if result.isError(): raise ModbusIOException(f"Modbus error on coil write: {result}")
             return True
-        except (ConnectionException, ModbusIOException, asyncio.TimeoutError) as e:
+        # --- THIS IS THE FIX: Catch any exception to ensure cleanup ---
+        except Exception as e:
             print(f"Modbus write_coil failed for address {address}: {e}")
             self.health_status = ModbusHealthStatus.ERROR
             await self.disconnect()
             return False
+        # --- END OF FIX ---

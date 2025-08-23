@@ -82,6 +82,11 @@ class AsyncDetectionService:
         self._in_flight_objects: Deque[str] = deque()
         self._entry_timestamps: Dict[int, float] = {}
         self._stalled_product_timers: Dict[str, asyncio.TimerHandle] = {}
+        
+        # --- THIS IS THE FIX (Part 1): Add a state flag for the entry sensor ---
+        self._entry_sensor_is_blocked = False
+        # --- END OF FIX ---
+        
         self._base_travel_time_sec = 0.0
         if self._conveyor_config.SPEED_M_PER_SEC > 0:
             self._base_travel_time_sec = self._conveyor_config.CAMERA_TO_SORTER_DISTANCE_M / self._conveyor_config.SPEED_M_PER_SEC
@@ -90,7 +95,6 @@ class AsyncDetectionService:
     def get_in_flight_count(self) -> int:
         return len(self._in_flight_objects)
 
-    # --- NEW METHOD TO BE CALLED BY SYSTEM SERVICE ---
     async def reset_state(self):
         """
         Clears all internal state of the detection service, including in-flight objects.
@@ -99,13 +103,15 @@ class AsyncDetectionService:
             self._in_flight_objects.clear()
             self._entry_timestamps.clear()
             
-            # Cancel any pending stall timers to prevent them from firing later
             for timer in self._stalled_product_timers.values():
                 timer.cancel()
             self._stalled_product_timers.clear()
+
+            # --- THIS IS THE FIX (Part 2): Reset the state flag ---
+            self._entry_sensor_is_blocked = False
+            # --- END OF FIX ---
             
             print("Detection Service: Internal state has been fully reset.")
-    # --- END OF NEW METHOD ---
 
     async def _check_sensor_block_time(self, event: SensorEvent):
         start_time = self._entry_timestamps.pop(event.sensor_id, None)
@@ -261,44 +267,51 @@ class AsyncDetectionService:
     async def handle_sensor_event(self, event: SensorEvent):
         async with self._lock:
             if self._orchestration.get_status()["mode"] not in [OperatingMode.RUNNING.value, OperatingMode.POST_RUN_DELAY.value]:
-                if self._stalled_product_timers:
-                    for timer in self._stalled_product_timers.values(): timer.cancel()
-                    self._stalled_product_timers.clear()
                 return
 
             if event.sensor_id == settings.SENSORS.ENTRY_CHANNEL:
                 if event.new_state == SensorState.TRIGGERED:
-                    if self._orchestration.get_status()["mode"] != OperatingMode.RUNNING.value: return
-                    self._entry_timestamps[event.sensor_id] = event.timestamp
-                    serial_number = str(uuid.uuid4())
-                    self._in_flight_objects.append(serial_number)
-                    timeout_sec = self._conveyor_config.MAX_TRANSIT_TIME_SEC
-                    loop = asyncio.get_running_loop()
-                    timer_handle = loop.call_later(timeout_sec, lambda: asyncio.create_task(self._handle_stalled_product(serial_number)))
-                    self._stalled_product_timers[serial_number] = timer_handle
-                    
-                    if settings.CAMERA_TRIGGER_DELAY_MS > 0: await asyncio.sleep(settings.CAMERA_TRIGGER_DELAY_MS / 1000.0)
-                    
-                    image_path = None
-                    if self._active_camera_ids:
-                        image_path = await self._camera_manager.capture_and_save_image(self._active_camera_ids[0], f'event_{serial_number}')
-                    
-                    active_run_id = self._orchestration.get_active_run_id()
-                    if active_run_id and image_path:
-                        detection_log_id = None
-                        try:
-                            async with self._get_db_session() as session:
-                                new_event = DetectionEventLog(run_log_id=active_run_id, image_path=image_path, serial_number=serial_number)
-                                session.add(new_event)
-                                await session.commit()
-                                await session.refresh(new_event)
-                                detection_log_id = new_event.id
-                        except Exception as e:
-                            print(f"ERROR: Could not log detection event to database: {e}")
-                        if detection_log_id:
-                            asyncio.create_task(self._run_qc_and_update_db(detection_log_id, serial_number, image_path))
+                    # --- THIS IS THE FIX (Part 3): Debounce the entry sensor ---
+                    # Only register a new object if the sensor was previously not blocked.
+                    if not self._entry_sensor_is_blocked:
+                        self._entry_sensor_is_blocked = True # Set the flag
+                        
+                        # The rest of the logic for a new object detection
+                        self._entry_timestamps[event.sensor_id] = event.timestamp
+                        serial_number = str(uuid.uuid4())
+                        self._in_flight_objects.append(serial_number)
+                        timeout_sec = self._conveyor_config.MAX_TRANSIT_TIME_SEC
+                        loop = asyncio.get_running_loop()
+                        timer_handle = loop.call_later(timeout_sec, lambda: asyncio.create_task(self._handle_stalled_product(serial_number)))
+                        self._stalled_product_timers[serial_number] = timer_handle
+                        
+                        if settings.CAMERA_TRIGGER_DELAY_MS > 0: await asyncio.sleep(settings.CAMERA_TRIGGER_DELAY_MS / 1000.0)
+                        
+                        image_path = None
+                        if self._active_camera_ids:
+                            image_path = await self._camera_manager.capture_and_save_image(self._active_camera_ids[0], f'event_{serial_number}')
+                        
+                        active_run_id = self._orchestration.get_active_run_id()
+                        if active_run_id and image_path:
+                            detection_log_id = None
+                            try:
+                                async with self._get_db_session() as session:
+                                    new_event = DetectionEventLog(run_log_id=active_run_id, image_path=image_path, serial_number=serial_number)
+                                    session.add(new_event)
+                                    await session.commit()
+                                    await session.refresh(new_event)
+                                    detection_log_id = new_event.id
+                            except Exception as e:
+                                print(f"ERROR: Could not log detection event to database: {e}")
+                            if detection_log_id:
+                                asyncio.create_task(self._run_qc_and_update_db(detection_log_id, serial_number, image_path))
+                    else:
+                        if self._verbose:
+                            print("DETECTION IGNORED: Entry sensor re-triggered (bounce) while already blocked.")
                 
                 elif event.new_state == SensorState.CLEARED:
+                    # --- THIS IS THE FIX (Part 4): Reset the debounce flag when the sensor is clear ---
+                    self._entry_sensor_is_blocked = False
                     await self._check_sensor_block_time(event)
 
             elif event.sensor_id == settings.SENSORS.EXIT_CHANNEL and event.new_state == SensorState.TRIGGERED:

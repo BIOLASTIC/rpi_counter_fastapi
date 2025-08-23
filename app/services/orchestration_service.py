@@ -3,7 +3,7 @@
 import asyncio
 import json
 from enum import Enum
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, TYPE_CHECKING
 from datetime import datetime, timezone
 import time 
 
@@ -20,6 +20,10 @@ from app.models.operator import Operator
 from config import ACTIVE_CAMERA_IDS, settings
 from config.settings import AppSettings
 from app.services.audio_service import AsyncAudioService
+
+# Avoids circular imports by only importing types for type checking
+if TYPE_CHECKING:
+    from app.services.detection_service import AsyncDetectionService
 
 
 class OperatingMode(str, Enum):
@@ -59,12 +63,18 @@ class AsyncOrchestrationService:
         self._run_post_batch_delay_sec: int = 5
         self._current_count: int = 0
         
-        self._pause_start_time: Optional[datetime] = None # <-- ADD THIS STATE VARIABLE
+        self._pause_start_time: Optional[datetime] = None
         
         self._output_map = self._settings.OUTPUTS
         
         self._buzzer_queue = asyncio.Queue()
         self._buzzer_task: Optional[asyncio.Task] = None
+        
+        self._detection_service: Optional["AsyncDetectionService"] = None
+
+    def set_detection_service(self, detection_service: "AsyncDetectionService"):
+        """Injects the detection service dependency after initialization to break the circular dependency."""
+        self._detection_service = detection_service
 
     def beep_for(self, duration_ms: int):
         if duration_ms > 0:
@@ -179,9 +189,11 @@ class AsyncOrchestrationService:
             self._active_profile, self._active_product, self._active_run_id = None, None, None
             self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
             self._run_operator_name, self._run_batch_code = None, None
-            self._pause_start_time = None # <-- RESET PAUSE TIME
+            self._pause_start_time = None
             await self.initialize_hardware_state()
             await self.trigger_persistent_alarm(f"CRITICAL FAILURE: {reason}")
+            if self._detection_service:
+                await self._detection_service.reset_state()
 
     async def acknowledge_alarm(self):
         if not self._active_alarm_message: return
@@ -244,7 +256,7 @@ class AsyncOrchestrationService:
             await self._redis.publish(f"camera:commands:{cam_id}", command_bytes)
         
         self._current_count, self._mode = 0, OperatingMode.RUNNING
-        self._pause_start_time = None # <-- RESET PAUSE TIME
+        self._pause_start_time = None
         await self._io.write_coil(self._output_map.LED_RED, False)
         await self._io.write_coil(self._output_map.LED_GREEN, True)
         await self._io.write_coil(self._output_map.CONVEYOR, True)
@@ -277,8 +289,17 @@ class AsyncOrchestrationService:
         async with self._lock:
             if self._mode != OperatingMode.POST_RUN_DELAY: return
             await self._io.write_coil(self._output_map.CONVEYOR, False)
+            
+            # --- THIS IS THE DEFINITIVE FIX ---
+            # At this point, the run is complete and the belt is stopped.
+            # Any remaining items in the detection service are from the completed run
+            # and must be cleared before the next one starts to prevent ghost stalls.
+            if self._detection_service:
+                await self._detection_service.reset_state()
+            # --- END OF FIX ---
+            
             self._mode = OperatingMode.PAUSED_BETWEEN_BATCHES
-            self._pause_start_time = datetime.now(timezone.utc) # <-- SET PAUSE START TIME
+            self._pause_start_time = datetime.now(timezone.utc)
             pause_delay = self._run_post_batch_delay_sec
             print(f"Orchestrator: Conveyor stopped. Pausing for {pause_delay}s before next batch.")
 
@@ -300,9 +321,11 @@ class AsyncOrchestrationService:
             self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
             self._run_operator_name = None
             self._run_batch_code = None
-            self._pause_start_time = None # <-- RESET PAUSE TIME
+            self._pause_start_time = None
             await self.acknowledge_alarm()
             await self.initialize_hardware_state()
+            if self._detection_service:
+                await self._detection_service.reset_state()
 
     def get_status(self) -> dict:
         status_payload = {

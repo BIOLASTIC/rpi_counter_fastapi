@@ -26,7 +26,7 @@ from app.services.detection_service import AsyncDetectionService
 from app.services.system_service import AsyncSystemService
 from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
-from app.services.audio_service import AsyncAudioService # <-- ADD THIS IMPORT
+from app.services.audio_service import AsyncAudioService
 from app.websocket.connection_manager import manager as websocket_manager
 
 class NoCacheStaticFiles(StaticFiles):
@@ -47,15 +47,14 @@ async def lifespan(app: FastAPI):
     
     app.state.redis_client = redis.from_url("redis://localhost")
 
-    # --- SERVICE INITIALIZATION (WITH NEW AUDIO SERVICE) ---
-    app.state.audio_service = AsyncAudioService(db_session_factory=AsyncSessionFactory) # <-- INITIALIZE AUDIO SERVICE
+    app.state.audio_service = AsyncAudioService(db_session_factory=AsyncSessionFactory)
     app.state.modbus_controller = await AsyncModbusController.get_instance()
     app.state.orchestration_service = AsyncOrchestrationService(
         modbus_controller=app.state.modbus_controller,
         db_session_factory=AsyncSessionFactory,
         redis_client=app.state.redis_client,
         app_settings=settings,
-        audio_service=app.state.audio_service # <-- INJECT AUDIO SERVICE
+        audio_service=app.state.audio_service
     )
     app.state.notification_service = AsyncNotificationService(db_session_factory=AsyncSessionFactory)
     app.state.camera_manager = AsyncCameraManager(
@@ -72,7 +71,7 @@ async def lifespan(app: FastAPI):
         conveyor_settings=settings.CONVEYOR,
         db_session_factory=AsyncSessionFactory,
         active_camera_ids=ACTIVE_CAMERA_IDS,
-        audio_service=app.state.audio_service # <-- INJECT AUDIO SERVICE
+        audio_service=app.state.audio_service
     )
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
@@ -87,6 +86,12 @@ async def lifespan(app: FastAPI):
         orchestration_service=app.state.orchestration_service,
         settings=settings
     )
+    
+    # --- THIS IS THE DEFINITIVE FIX ---
+    # Inject the detection_service into the orchestration_service after both are initialized.
+    # This breaks the circular dependency and allows orchestration to control detection state.
+    app.state.orchestration_service.set_detection_service(app.state.detection_service)
+    # --- END OF FIX ---
 
     await app.state.orchestration_service.initialize_hardware_state()
     app.state.active_camera_ids = ACTIVE_CAMERA_IDS
@@ -136,7 +141,6 @@ async def lifespan(app: FastAPI):
     app.state.qc_broadcast_task = asyncio.create_task(qc_image_broadcaster())
     
     await app.state.notification_service.send_alert("INFO", "Application startup complete.")
-    # <-- PLAY STARTUP SOUND -->
     await app.state.audio_service.play_sound_for_event("startup_complete")
     print("--- Application startup complete. Server is online. ---")
 
