@@ -140,15 +140,18 @@ class AsyncOrchestrationService:
         return self._active_run_id
 
     async def on_box_processed(self):
-        task_to_run = None
+        # --- THIS IS THE DEFINITIVE FIX FOR THE DEADLOCK ---
+        # The logic is simplified. We acquire the lock, check the condition,
+        # and if met, we START the completion task but DO NOT await it.
+        # This releases the lock immediately and prevents the deadlock.
         async with self._lock:
             if self._mode == OperatingMode.RUNNING:
                 self._current_count += 1
                 if self._run_target_count > 0 and self._current_count >= self._run_target_count:
-                    print("Orchestrator: Target count reached. Beginning stop delay sequence.")
-                    task_to_run = asyncio.create_task(self.complete_and_loop_run())
-        if task_to_run:
-            await task_to_run
+                    print("Orchestrator: Target count reached. Scheduling stop delay sequence.")
+                    # Schedule the task to run independently. Do NOT await it here.
+                    asyncio.create_task(self.complete_and_loop_run())
+        # --- END OF FIX ---
 
     async def on_exit_sensor_triggered(self):
         self.beep_for(self._settings.BUZZER.EXIT_SENSOR_MS)
@@ -290,13 +293,8 @@ class AsyncOrchestrationService:
             if self._mode != OperatingMode.POST_RUN_DELAY: return
             await self._io.write_coil(self._output_map.CONVEYOR, False)
             
-            # --- THIS IS THE DEFINITIVE FIX ---
-            # At this point, the run is complete and the belt is stopped.
-            # Any remaining items in the detection service are from the completed run
-            # and must be cleared before the next one starts to prevent ghost stalls.
             if self._detection_service:
                 await self._detection_service.reset_state()
-            # --- END OF FIX ---
             
             self._mode = OperatingMode.PAUSED_BETWEEN_BATCHES
             self._pause_start_time = datetime.now(timezone.utc)
@@ -308,7 +306,18 @@ class AsyncOrchestrationService:
         async with self._lock:
             if self._mode != OperatingMode.PAUSED_BETWEEN_BATCHES: return
             print("Orchestrator: Pause finished. Looping to next batch...")
-            await self._execute_start_sequence()
+            
+            success = await self._execute_start_sequence()
+            if not success:
+                print("Orchestrator: FAILED to loop to the next batch. The recipe may be invalid. System stopping.")
+                self._mode = OperatingMode.STOPPED
+                self._active_profile, self._active_product, self._active_run_id = None, None, None
+                self._run_profile_id, self._current_count, self._run_target_count = None, 0, 0
+                self._run_operator_name = None
+                self._run_batch_code = None
+                self._pause_start_time = None
+                await self.initialize_hardware_state()
+                await self.trigger_persistent_alarm("Failed to restart the next batch automatically.")
 
     async def stop_run(self):
         async with self._lock:

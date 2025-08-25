@@ -83,9 +83,7 @@ class AsyncDetectionService:
         self._entry_timestamps: Dict[int, float] = {}
         self._stalled_product_timers: Dict[str, asyncio.TimerHandle] = {}
         
-        # --- THIS IS THE FIX (Part 1): Add a state flag for the entry sensor ---
         self._entry_sensor_is_blocked = False
-        # --- END OF FIX ---
         
         self._base_travel_time_sec = 0.0
         if self._conveyor_config.SPEED_M_PER_SEC > 0:
@@ -107,9 +105,7 @@ class AsyncDetectionService:
                 timer.cancel()
             self._stalled_product_timers.clear()
 
-            # --- THIS IS THE FIX (Part 2): Reset the state flag ---
             self._entry_sensor_is_blocked = False
-            # --- END OF FIX ---
             
             print("Detection Service: Internal state has been fully reset.")
 
@@ -266,17 +262,19 @@ class AsyncDetectionService:
 
     async def handle_sensor_event(self, event: SensorEvent):
         async with self._lock:
-            if self._orchestration.get_status()["mode"] not in [OperatingMode.RUNNING.value, OperatingMode.POST_RUN_DELAY.value]:
+            # --- THIS IS THE DEFINITIVE FIX ---
+            # Sensor events should ONLY be processed when the system is actively running.
+            # This prevents new objects from being added during the post-run delay, which
+            # was the root cause of the incorrect "ON BELT" count and looping failure.
+            if self._orchestration.get_status()["mode"] != OperatingMode.RUNNING.value:
                 return
+            # --- END OF FIX ---
 
             if event.sensor_id == settings.SENSORS.ENTRY_CHANNEL:
                 if event.new_state == SensorState.TRIGGERED:
-                    # --- THIS IS THE FIX (Part 3): Debounce the entry sensor ---
-                    # Only register a new object if the sensor was previously not blocked.
                     if not self._entry_sensor_is_blocked:
-                        self._entry_sensor_is_blocked = True # Set the flag
+                        self._entry_sensor_is_blocked = True
                         
-                        # The rest of the logic for a new object detection
                         self._entry_timestamps[event.sensor_id] = event.timestamp
                         serial_number = str(uuid.uuid4())
                         self._in_flight_objects.append(serial_number)
@@ -310,7 +308,6 @@ class AsyncDetectionService:
                             print("DETECTION IGNORED: Entry sensor re-triggered (bounce) while already blocked.")
                 
                 elif event.new_state == SensorState.CLEARED:
-                    # --- THIS IS THE FIX (Part 4): Reset the debounce flag when the sensor is clear ---
                     self._entry_sensor_is_blocked = False
                     await self._check_sensor_block_time(event)
 
