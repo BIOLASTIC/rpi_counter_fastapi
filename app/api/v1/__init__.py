@@ -1,5 +1,3 @@
-# rpi_counter_fastapi-apintrigation/app/api/v1/__init__.py
-
 from fastapi import APIRouter
 
 # Import the MODULES where the routers are defined.
@@ -13,8 +11,8 @@ from . import products
 from . import operators
 from . import run_history
 from . import reports
-from . import analytics 
-from . import audio # <-- ADD THIS IMPORT
+from . import analytics
+from . import ai_strategy
 
 # Create the main router for the v1 API.
 api_router = APIRouter()
@@ -31,4 +29,4 @@ api_router.include_router(operators.router, prefix="/operators", tags=["Operator
 api_router.include_router(run_history.router, prefix="/run-history", tags=["Run History"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
-api_router.include_router(audio.router, prefix="/audio", tags=["Audio"]) # <-- ADD THIS LINE
+api_router.include_router(ai_strategy.router, prefix="/ai-strategy", tags=["AI & Audio Strategy"])

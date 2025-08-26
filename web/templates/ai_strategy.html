@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}AI & Audio Strategy{% endblock %}
+
+{% block content %}
+<div class="container-fluid pt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-brain me-2"></i>AI & Audio Strategy Configuration
+                        <a href="/help/ai_strategy" class="btn btn-outline-light btn-sm float-end" target="_blank" rel="noopener noreferrer">
+                            <i class="fas fa-question-circle me-1"></i>Help
+                        </a>
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form id="ai-strategy-form">
+                        <!-- Main Toggles -->
+                        <div class="row border-bottom pb-3 mb-3">
+                            <div class="col-md-4">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="yolo_enabled" name="YOLO_ENABLED">
+                                    <label class="form-check-label" for="yolo_enabled"><strong>Enable YOLO QC Analysis</strong></label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="llm_enabled" name="LLM_ENABLED">
+                                    <label class="form-check-label" for="llm_enabled"><strong>Enable LLM Summaries</strong></label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="tts_enabled" name="TTS_ENABLED">
+                                    <label class="form-check-label" for="tts_enabled"><strong>Enable TTS Audio Feedback</strong></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Language and TTS Engines -->
+                        <div class="row border-bottom pb-3 mb-3">
+                             <!-- THIS IS THE FIX -->
+                             <div class="col-md-3">
+                                <label for="language" class="form-label"><strong>LLM Language</strong></label>
+                                <select class="form-select" id="language" name="LANGUAGE">
+                                    <option value="english">English</option>
+                                    <option value="hindi">Hindi</option>
+                                    <option value="bengali">Bengali</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="tts_language" class="form-label"><strong>TTS Language</strong></label>
+                                <select class="form-select" id="tts_language" name="TTS_LANGUAGE">
+                                    <option value="en">English (en)</option>
+                                    <option value="hi">Hindi (hi)</option>
+                                    <option value="bn">Bengali (bn)</option>
+                                </select>
+                            </div>
+                            <!-- END OF FIX -->
+                            <div class="col-md-3">
+                                <label for="realtime_tts_engine" class="form-label"><strong>Real-time TTS Engine</strong></label>
+                                <select class="form-select" id="realtime_tts_engine" name="REALTIME_TTS_ENGINE">
+                                    <option value="mac">macOS (Fastest)</option>
+                                    <option value="xtts">XTTS (High Quality)</option>
+                                    <option value="parler">Parler (Multi-lingual)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="summary_tts_engine" class="form-label"><strong>Summary TTS Engine</strong></label>
+                                <select class="form-select" id="summary_tts_engine" name="SUMMARY_TTS_ENGINE">
+                                    <option value="mac">macOS (Fastest)</option>
+                                    <option value="parler">Parler (Multi-lingual)</option>
+                                    <option value="xtts">XTTS (High Quality)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Alerts -->
+                        <h5 class="mt-4">Real-time Item Alerts</h5>
+                        <div class="row border-bottom pb-3 mb-3 align-items-center">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="alert_on_pass" name="ALERT_ON_PASS">
+                                    <label class="form-check-label" for="alert_on_pass">Alert on Item Pass</label>
+                                </div>
+                                <div class="input-group">
+                                    <textarea class="form-control" id="pass_template" name="PASS_TEMPLATE" rows="2"></textarea>
+                                    <button class="btn btn-outline-secondary test-audio-btn" type="button" data-template-key="PASS_TEMPLATE"><i class="fas fa-play"></i> Test</button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="alert_on_reject" name="ALERT_ON_REJECT">
+                                    <label class="form-check-label" for="alert_on_reject">Alert on Item Reject</label>
+                                </div>
+                                <div class="input-group">
+                                    <textarea class="form-control" id="reject_template" name="REJECT_TEMPLATE" rows="2"></textarea>
+                                    <button class="btn btn-outline-secondary test-audio-btn" type="button" data-template-key="REJECT_TEMPLATE"><i class="fas fa-play"></i> Test</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Batch Lifecycle Alerts -->
+                        <h5 class="mt-4">Batch Lifecycle Alerts</h5>
+                        <div class="row border-bottom pb-3 mb-3">
+                             <div class="col-md-6">
+                                <label for="batch_complete_template" class="form-label">Batch Complete Alert</label>
+                                <div class="input-group">
+                                    <textarea class="form-control" id="batch_complete_template" name="BATCH_COMPLETE_TEMPLATE" rows="2"></textarea>
+                                    <button class="btn btn-outline-secondary test-audio-btn" type="button" data-template-key="BATCH_COMPLETE_TEMPLATE"><i class="fas fa-play"></i> Test</button>
+                                </div>
+                            </div>
+                             <div class="col-md-6">
+                                <label for="next_batch_template" class="form-label">Next Batch Countdown</label>
+                                <div class="input-group">
+                                    <textarea class="form-control" id="next_batch_template" name="NEXT_BATCH_TEMPLATE" rows="2"></textarea>
+                                    <button class="btn btn-outline-secondary test-audio-btn" type="button" data-template-key="NEXT_BATCH_TEMPLATE"><i class="fas fa-play"></i> Test</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LLM & Summary Settings -->
+                        <h5 class="mt-4">LLM Summary Settings</h5>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="llm_item_analysis_enabled" name="LLM_ITEM_ANALYSIS_ENABLED">
+                                    <label class="form-check-label" for="llm_item_analysis_enabled">Enable Per-Item Analysis</label>
+                                </div>
+                                <label for="llm_item_word_count" class="form-label">Item Summary Words</label>
+                                <input type="number" class="form-control" id="llm_item_word_count" name="LLM_ITEM_WORD_COUNT" min="10" max="50">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="summary_llm_model" class="form-label">Batch Summary LLM</label>
+                                <select class="form-select" id="summary_llm_model" name="SUMMARY_LLM_MODEL">
+                                    <option value="high_quality">High Quality</option>
+                                    <option value="realtime">Real-time</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="llm_summary_word_count" class="form-label">Batch Summary Words</label>
+                                <input type="number" class="form-control" id="llm_summary_word_count" name="LLM_SUMMARY_WORD_COUNT" min="20" max="200">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="tts_summary_chunk_count" class="form-label">TTS Audio Chunks</label>
+                                <input type="number" class="form-control" id="tts_summary_chunk_count" name="TTS_SUMMARY_CHUNK_COUNT" min="1" max="10">
+                            </div>
+                        </div>
+
+                        <!-- Full Pipeline Tests -->
+                        <div class="row mt-4 pt-3 border-top">
+                            <div class="col-md-6">
+                                <h6><i class="fas fa-vials me-2"></i>End-to-End Pipeline Tests</h6>
+                                <p class="text-muted small">Test the full LLM -> TTS pipeline. Audio will be generated and played back in your browser.</p>
+                                <button id="test-item-pipeline-btn" class="btn btn-info me-2"><i class="fas fa-microchip me-2"></i>Test Per-Item Pipeline</button>
+                                <button id="test-summary-pipeline-btn" class="btn btn-warning"><i class="fas fa-file-alt me-2"></i>Test Batch Summary Pipeline</button>
+                                
+                                <div id="summary-pipeline-result-text" class="alert alert-secondary mt-3" style="display: none;"></div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-end">
+                    <button id="save-strategy-btn" type="button" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save Strategy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/ai_strategy.js"></script>
+{% endblock %}

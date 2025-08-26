@@ -1,135 +1,102 @@
 {% extends "base.html" %}
 
+{% block title %}Connections & Hardware{% endblock %}
+
 {% block content %}
-<style>
-    .connections-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 2rem 0;
-        font-family: monospace;
-    }
-    .rpi-box {
-        width: 200px;
-        height: 300px;
-        border: 3px solid #555;
-        background-color: #c7c7c7;
-        border-radius: 10px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        margin: 0 4rem;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-    }
-    .rpi-box .logo {
-        width: 80px;
-        height: auto;
-    }
-    .rpi-box-label {
-        font-weight: bold;
-        color: #333;
-        margin-top: 10px;
-    }
-    .connection-group {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-    .device-card {
-        padding: 0.8rem 1.2rem;
-        border: 1px solid #ccc;
-        background-color: #fff;
-        border-radius: 8px;
-        min-width: 250px;
-        position: relative;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-    }
-    .device-card::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        height: 2px;
-        background-color: #999;
-        width: 4rem; /* Length of the line */
-    }
-    /* Position lines based on which side the card is on */
-    .connection-group.left .device-card::after {
-        right: -4rem;
-    }
-    .connection-group.right .device-card::after {
-        left: -4rem;
-    }
-    .device-title {
-        font-weight: bold;
-        margin-bottom: 0.25rem;
-    }
-    .device-details {
-        font-size: 0.8em;
-        color: #666;
-    }
-    .device-status {
-        margin-top: 0.5rem;
-    }
-</style>
+<div class="container-fluid">
+    <h1 class="h3 mb-4 text-gray-800">Hardware Connections & Configuration</h1>
+    <p class="mb-4">
+        This page displays the current hardware configuration as loaded from the application's environment settings.
+        These values are read-only and intended for reference and debugging. To change these, you must edit the <code>.env</code> file and restart the application.
+    </p>
 
-<div class="container">
-    <h1 class="mb-4">Live Hardware Connections</h1>
-
-    <div class="connections-container">
-        <!-- Left Side Devices (GPIO) -->
-        <div class="connection-group left">
-            <div class="device-card" id="device-conveyor">
-                <div class="device-title">Conveyor Relay</div>
-                <div class="device-details">BCM Pin: {{ config.GPIO.CONVEYOR_RELAY }}</div>
-                <div class="device-status">Status: <span class="badge" id="conn-conveyor">--</span></div>
-            </div>
-            <div class="device-card" id="device-gate">
-                <div class="device-title">Gate Relay</div>
-                <div class="device-details">BCM Pin: {{ config.GPIO.GATE_RELAY }}</div>
-                <div class="device-status">Status: <span class="badge" id="conn-gate">--</span></div>
-            </div>
-             <div class="device-card" id="device-buzzer">
-                <div class="device-title">Buzzer</div>
-                <div class="device-details">BCM Pin: {{ config.GPIO.BUZZER }}</div>
-                <div class="device-status">Status: <span class="badge" id="conn-buzzer">--</span></div>
+    <!-- Modbus RTU Communication Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Modbus RTU (RS485) Communication</h6>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <strong class="d-block text-gray-800">Serial Port:</strong>
+                    <span>{{ config.MODBUS.PORT }}</span>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <strong class="d-block text-gray-800">Baud Rate:</strong>
+                    <span>{{ config.MODBUS.BAUDRATE }}</span>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <strong class="d-block text-gray-800">Input Module Slave ID:</strong>
+                    <span>{{ config.MODBUS.DEVICE_ADDRESS_INPUTS }}</span>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <strong class="d-block text-gray-800">Output Module Slave ID:</strong>
+                    <span>{{ config.MODBUS.DEVICE_ADDRESS_OUTPUTS }}</span>
+                </div>
+                 <div class="col-md-6 mb-3">
+                    <strong class="d-block text-gray-800">Polling Interval:</strong>
+                    <span>{{ config.MODBUS.POLLING_MS }} ms</span>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Raspberry Pi Box -->
-        <div class="rpi-box">
-            <img src="https://www.raspberrypi.com/img/raspberry-pi-logo.svg" alt="Pi Logo" class="logo">
-            <div class="rpi-box-label">Raspberry Pi 5</div>
+    <!-- I/O Channel Mapping Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">I/O Channel Mapping</h6>
         </div>
+        <div class="card-body">
+            <div class="row">
+                <!-- Input Sensors -->
+                <div class="col-lg-6">
+                    <h5 class="text-gray-800">Input Sensors (USR-IO4040)</h5>
+                    <p>Maps logical sensor names to the physical 1-based channel on the input module.</p>
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Entry Sensor Channel
+                            <span class="badge badge-primary badge-pill">Channel {{ config.SENSORS.ENTRY_CHANNEL }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Exit Sensor Channel
+                            <span class="badge badge-primary badge-pill">Channel {{ config.SENSORS.EXIT_CHANNEL }}</span>
+                        </li>
+                    </ul>
+                </div>
 
-        <!-- Right Side Devices (GPIO, USB, CSI) -->
-        <div class="connection-group right">
-            <div class="device-card" id="device-led-green">
-                <div class="device-title">Status LED (Green)</div>
-                <div class="device-details">BCM Pin: {{ config.GPIO.STATUS_LED_GREEN }}</div>
-                <div class="device-status">Status: <span class="badge" id="conn-led-green">--</span></div>
-            </div>
-            <div class="device-card" id="device-led-red">
-                <div class="device-title">Status LED (Red)</div>
-                <div class="device-details">BCM Pin: {{ config.GPIO.STATUS_LED_RED }}</div>
-                <div class="device-status">Status: <span class="badge" id="conn-led-red">--</span></div>
-            </div>
-            <div class="device-card" id="device-io-module">
-                <div class="device-title">Modbus IO Module</div>
-                <div class="device-details">Port: {{ config.MODBUS.PORT }} (via USB)</div>
-                <div class="device-status">Status: <span class="badge" id="conn-io-module">--</span></div>
-            </div>
-            <div class="device-card" id="device-camera">
-                <div class="device-title">Camera Module</div>
-                <div class="device-details">Port: CSI</div>
-                <div class="device-status">Status: <span class="badge" id="conn-camera">--</span></div>
+                <!-- Output Relays & Coils -->
+                <div class="col-lg-6">
+                    <h5 class="text-gray-800">Output Coils (USR-IO8000)</h5>
+                    <p>Maps logical device names to the 0-indexed relay address on the output module.</p>
+                     <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Conveyor Relay
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.CONVEYOR }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Buzzer
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.BUZZER }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Green Status LED
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.LED_GREEN }}</span>
+                        </li>
+                         <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Red Status LED
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.LED_RED }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Camera Light 1
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.CAMERA_LIGHT }}</span>
+                        </li>
+                         <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Camera Light 2
+                            <span class="badge badge-primary badge-pill">Address {{ config.OUTPUTS.CAMERA_LIGHT_TWO }}</span>
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
-
-<!-- FIX: Add cache-busting query string -->
-{% block scripts %}
-<script src="/static/js/connections.js?v=1.1"></script>
 {% endblock %}

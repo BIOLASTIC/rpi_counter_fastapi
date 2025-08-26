@@ -48,3 +48,9 @@ psutil==5.9.8
 psutil==5.9.8
 markdown2==2.4.13
 aiofiles
+
+
+# --- NEW DEPENDENCIES ---
+tiktoken
+aiofiles
+pymodbus

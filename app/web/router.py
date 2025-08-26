@@ -1,14 +1,10 @@
-# rpi_counter_fastapi-apintrigation/web/router.py
-
-"""
-Web routes for serving HTML pages.
-"""
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pathlib import Path
 import markdown2 
+import json
 
 from app.models import get_async_session, EventLog, ObjectProfile
 from config import settings, ACTIVE_CAMERA_IDS
@@ -46,12 +42,11 @@ async def read_products_page(request: Request):
 async def read_operators_page(request: Request):
     return NoCacheTemplateResponse(request, "operators.html", {"request": request})
 
-# <-- ADD NEW ROUTE FOR AUDIO SETTINGS -->
-@router.get("/settings/audio", response_class=HTMLResponse)
-async def read_audio_settings_page(request: Request):
-    """Serves the Audio Settings page."""
-    return NoCacheTemplateResponse(request, "audio_settings.html", {"request": request})
-# <-- END OF NEW ROUTE -->
+@router.get("/settings/ai-strategy", response_class=HTMLResponse)
+async def read_ai_strategy_page(request: Request):
+    """Serves the AI & Audio Strategy settings page."""
+    context = {"request": request}
+    return NoCacheTemplateResponse(request, "ai_strategy.html", context)
 
 @router.get("/status", response_class=HTMLResponse)
 async def read_status_page(request: Request):

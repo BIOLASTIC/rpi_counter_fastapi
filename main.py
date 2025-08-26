@@ -1,5 +1,3 @@
-# rpi_counter_fastapi-apintrigation/main.py
-
 import asyncio
 from contextlib import asynccontextmanager
 import json
@@ -10,24 +8,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 import redis.asyncio as redis
 
+# --- Core Application Imports ---
 PROJECT_ROOT = Path(__file__).parent
 from config import settings, ACTIVE_CAMERA_IDS
 from app.models.database import engine, Base, AsyncSessionFactory
+
+# --- Routers ---
 from app.api.v1 import api_router as api_v1_router
+from app.api.v1 import ai_strategy as ai_strategy_router
 from app.web.router import router as web_router
 from app.websocket.router import router as websocket_router
-from app.middleware.metrics_middleware import MetricsMiddleware
 if settings.APP_ENV == "development":
     from app.api.v1 import debug as debug_router
+
+# --- Middleware & Managers ---
+from app.middleware.metrics_middleware import MetricsMiddleware
+from app.websocket.connection_manager import manager as websocket_manager
+
+# --- Core Hardware & System Components ---
 from app.core.modbus_controller import AsyncModbusController
 from app.core.camera_manager import AsyncCameraManager
 from app.core.modbus_poller import AsyncModbusPoller
+
+# --- Application Services ---
 from app.services.detection_service import AsyncDetectionService
 from app.services.system_service import AsyncSystemService
 from app.services.notification_service import AsyncNotificationService
 from app.services.orchestration_service import AsyncOrchestrationService
-from app.services.audio_service import AsyncAudioService
-from app.websocket.connection_manager import manager as websocket_manager
+from app.services.audio_service import AsyncAudioService, TTS_CACHE_DIR
+from app.services.llm_service import LlmApiService
+from app.services.tts_service import TtsApiService
+
 
 class NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> Response:
@@ -45,33 +56,34 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     print("Database tables verified.")
     
-    app.state.redis_client = redis.from_url("redis://localhost")
+    app.state.redis_client = redis.from_url(f"redis://{settings.REDIS.HOST}:{settings.REDIS.PORT}")
 
-    app.state.audio_service = AsyncAudioService(db_session_factory=AsyncSessionFactory)
+    # Instantiate services
+    app.state.llm_service = LlmApiService()
+    app.state.tts_service = TtsApiService()
+    app.state.audio_service = AsyncAudioService(db_session_factory=AsyncSessionFactory, tts_service=app.state.tts_service)
     app.state.modbus_controller = await AsyncModbusController.get_instance()
+    
+    # --- THIS IS THE FIX (Part 1): Connect to Modbus on startup ---
+    await app.state.modbus_controller.connect()
+    # --- END OF FIX ---
+
     app.state.orchestration_service = AsyncOrchestrationService(
-        modbus_controller=app.state.modbus_controller,
-        db_session_factory=AsyncSessionFactory,
-        redis_client=app.state.redis_client,
-        app_settings=settings,
-        audio_service=app.state.audio_service
+        modbus_controller=app.state.modbus_controller, db_session_factory=AsyncSessionFactory,
+        redis_client=app.state.redis_client, app_settings=settings,
+        audio_service=app.state.audio_service, llm_service=app.state.llm_service
     )
     app.state.notification_service = AsyncNotificationService(db_session_factory=AsyncSessionFactory)
     app.state.camera_manager = AsyncCameraManager(
-        notification_service=app.state.notification_service,
-        captures_dir=settings.CAMERA_CAPTURES_DIR,
-        redis_client=app.state.redis_client,
-        active_camera_ids=ACTIVE_CAMERA_IDS
+        notification_service=app.state.notification_service, captures_dir=settings.CAMERA_CAPTURES_DIR,
+        redis_client=app.state.redis_client, active_camera_ids=ACTIVE_CAMERA_IDS
     )
     app.state.detection_service = AsyncDetectionService(
-        modbus_controller=app.state.modbus_controller,
-        camera_manager=app.state.camera_manager,
-        orchestration_service=app.state.orchestration_service,
-        redis_client=app.state.redis_client,
-        conveyor_settings=settings.CONVEYOR,
-        db_session_factory=AsyncSessionFactory,
-        active_camera_ids=ACTIVE_CAMERA_IDS,
-        audio_service=app.state.audio_service
+        modbus_controller=app.state.modbus_controller, camera_manager=app.state.camera_manager,
+        orchestration_service=app.state.orchestration_service, redis_client=app.state.redis_client,
+        conveyor_settings=settings.CONVEYOR, db_session_factory=AsyncSessionFactory,
+        active_camera_ids=ACTIVE_CAMERA_IDS, audio_service=app.state.audio_service,
+        llm_service=app.state.llm_service
     )
     app.state.modbus_poller = AsyncModbusPoller(
         modbus_controller=app.state.modbus_controller,
@@ -79,20 +91,19 @@ async def lifespan(app: FastAPI):
         sensor_config=settings.SENSORS
     )
     app.state.system_service = AsyncSystemService(
-        modbus_controller=app.state.modbus_controller,
-        modbus_poller=app.state.modbus_poller,
-        camera_manager=app.state.camera_manager,
-        detection_service=app.state.detection_service,
-        orchestration_service=app.state.orchestration_service,
-        settings=settings
+        modbus_controller=app.state.modbus_controller, modbus_poller=app.state.modbus_poller,
+        camera_manager=app.state.camera_manager, detection_service=app.state.detection_service,
+        orchestration_service=app.state.orchestration_service, llm_service=app.state.llm_service,
+        tts_service=app.state.tts_service, settings=settings
     )
     
-    # --- THIS IS THE DEFINITIVE FIX ---
-    # Inject the detection_service into the orchestration_service after both are initialized.
-    # This breaks the circular dependency and allows orchestration to control detection state.
     app.state.orchestration_service.set_detection_service(app.state.detection_service)
-    # --- END OF FIX ---
 
+    startup_audio_path = TTS_CACHE_DIR / "startup_complete.wav"
+    if not startup_audio_path.exists():
+        print("First run detected: Pre-generating startup audio...")
+        await app.state.audio_service.pre_generate_and_cache_alert("startup_complete", "System startup complete.")
+    
     await app.state.orchestration_service.initialize_hardware_state()
     app.state.active_camera_ids = ACTIVE_CAMERA_IDS
 
@@ -109,15 +120,13 @@ async def lifespan(app: FastAPI):
                 full_status_payload = { "system": system_status, "orchestration": orchestration_status }
                 await websocket_manager.broadcast_json({"type": "full_status", "data": full_status_payload})
                 await asyncio.sleep(0.5)
-            except asyncio.CancelledError:
-                break
+            except asyncio.CancelledError: break
             except Exception as e:
                 print(f"Error in broadcast loop: {e}")
                 await asyncio.sleep(5)
 
     async def qc_image_broadcaster():
-        pubsub_client = redis.from_url("redis://localhost")
-        pubsub = pubsub_client.pubsub()
+        pubsub = app.state.redis_client.pubsub()
         await pubsub.subscribe("qc_annotated_image:new")
         print("QC Image Broadcaster: Subscribed to Redis channel.")
         while True:
@@ -128,24 +137,21 @@ async def lifespan(app: FastAPI):
                     image_data = json.loads(payload_str)
                     payload = {"type": "qc_update", "data": image_data}
                     await websocket_manager.broadcast_json(payload)
-                    print(f"QC Image Broadcaster: Sent new image data to UI: {image_data}")
-            except asyncio.CancelledError:
-                break
+            except asyncio.CancelledError: break
             except Exception as e:
                 print(f"Error in QC Image Broadcaster loop: {e}")
                 await asyncio.sleep(5)
-        await pubsub_client.close()
 
-    
     app.state.broadcast_task = asyncio.create_task(broadcast_updates())
     app.state.qc_broadcast_task = asyncio.create_task(qc_image_broadcaster())
     
     await app.state.notification_service.send_alert("INFO", "Application startup complete.")
-    await app.state.audio_service.play_sound_for_event("startup_complete")
+    await app.state.audio_service.play_event_from_cache("startup_complete")
     print("--- Application startup complete. Server is online. ---")
 
     yield
 
+    # --- Shutdown Sequence ---
     print("--- Application shutting down... ---")
     if 'broadcast_task' in app.state and app.state.broadcast_task: app.state.broadcast_task.cancel()
     if 'qc_broadcast_task' in app.state and app.state.qc_broadcast_task: app.state.qc_broadcast_task.cancel()
@@ -166,6 +172,7 @@ def create_app() -> FastAPI:
     app.mount("/static", NoCacheStaticFiles(directory=PROJECT_ROOT / "web/static"), name="static")
     app.mount("/captures", NoCacheStaticFiles(directory=PROJECT_ROOT / settings.CAMERA_CAPTURES_DIR), name="captures")
     app.include_router(api_v1_router, prefix="/api/v1")
+    app.include_router(ai_strategy_router.router, prefix="/api/v1/ai-strategy", tags=["AI & Audio Strategy"])
     app.include_router(web_router)
     app.include_router(websocket_router)
     if settings.APP_ENV == "development":

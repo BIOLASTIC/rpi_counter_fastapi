@@ -1,269 +1,208 @@
-// /static/js/dashboard_v3.js
+document.addEventListener('DOMContentLoaded', () => {
+    const socket = new WebSocket(`ws://${window.location.host}/ws`);
+    socket.onopen = () => console.log("WebSocket connected.");
+    socket.onclose = () => console.log("WebSocket closed.");
+    socket.onerror = (error) => console.error("WebSocket Error:", error);
 
-document.addEventListener('DOMContentLoaded', function () {
-    // --- Application State ---
-    let appState = {
-        system: {},
-        orchestration: {},
-        ui: {
-            activeCameraId: document.querySelector('.camera-select-btn')?.dataset.cameraId || null,
-            countdownInterval: null,
-            preRunModal: new bootstrap.Modal(document.getElementById('pre-run-modal')),
+    const elements = {
+        progressPath: document.getElementById('progress-path'),
+        progressPercentage: document.getElementById('progress-percentage'),
+        progressDetails: document.getElementById('progress-details'),
+        activeProfile: document.getElementById('active-profile-display'),
+        runDetailBatch: document.getElementById('run-detail-batch'),
+        runDetailOperator: document.getElementById('run-detail-operator'),
+        countOnBelt: document.getElementById('count-on-belt'),
+        countProcessed: document.getElementById('count-processed'),
+        conveyorMode: document.getElementById('conveyor-mode'),
+        conveyorBelt: document.getElementById('conveyor-belt'),
+        liveCameraFeed: document.getElementById('live-camera-feed'),
+        aiAnnotatedFeed: document.getElementById('ai-annotated-feed'),
+        cameraSelectBtns: document.querySelectorAll('.camera-select-btn'),
+        aiDetailsQcStatus: document.getElementById('ai-details-qc-status'),
+        aiDetailsReason: document.getElementById('ai-details-reason'),
+        aiDetailsCategory: document.getElementById('ai-details-category-name'),
+        statusSensor1: document.getElementById('status-sensor-1'),
+        statusSensor2: document.getElementById('status-sensor-2'),
+        statusIoModule: document.getElementById('status-io-module'),
+        manualControlToggles: document.querySelectorAll('.manual-control-toggle input[type="checkbox"]'),
+        alarmBlock: document.getElementById('run-alarm-block'),
+        alarmMessage: document.getElementById('run-alarm-message'),
+        ackAlarmBtn: document.getElementById('acknowledge-alarm-btn'),
+        startRunBtn: document.getElementById('start-run-btn'),
+        stopRunBtn: document.getElementById('stop-run-btn'),
+        resetAllBtn: document.getElementById('reset-all-btn'),
+        profileSelect: document.getElementById('object-profile-select'),
+        targetCountInput: document.getElementById('target-count-input'),
+        postBatchDelayInput: document.getElementById('post-batch-delay-input'),
+        preRunModal: new bootstrap.Modal(document.getElementById('pre-run-modal')),
+        operatorSelect: document.getElementById('operator-select'),
+        batchCodeInput: document.getElementById('batch-code-input'),
+        reviewRunBtn: document.getElementById('review-run-btn'),
+        goBackBtn: document.getElementById('go-back-btn'),
+        startFinalRunBtn: document.getElementById('start-final-run-btn'),
+        confirmOperator: document.getElementById('confirm-operator'),
+        confirmBatchCode: document.getElementById('confirm-batch-code'),
+        confirmRecipe: document.getElementById('confirm-recipe'),
+        confirmTarget: document.getElementById('confirm-target'),
+        preRunInputView: document.getElementById('pre-run-input-view'),
+        preRunConfirmView: document.getElementById('pre-run-confirm-view'),
+    };
+
+    const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * 45;
+    elements.progressPath.style.strokeDasharray = CIRCLE_CIRCUMFERENCE;
+    let activeCameraId = elements.cameraSelectBtns[0]?.dataset.cameraId || 'rpi';
+
+    socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        switch (msg.type) {
+            case 'full_status':
+                updateFullStatus(msg.data);
+                break;
+            case 'qc_update':
+                updateQcPanel(msg.data);
+                break;
+            case 'new_item_detected':
+                // Use the count from the full_status for consistency, but trigger animation here
+                animateProduct(msg.data.serial_number);
+                break;
         }
     };
 
-    // --- DOM Element Cache ---
-    const ui = new Map(
-        Array.from(document.querySelectorAll('[id]')).map(el => [el.id, el])
-    );
-
-    // --- WebSocket Connection Manager ---
-    function setupWebSocket() {
-        console.log("Attempting to connect WebSocket...");
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-        const socket = new WebSocket(wsUrl);
-
-        socket.onopen = () => console.log("[WebSocket] Connection established.");
-        socket.onclose = () => {
-            console.error('[WebSocket] Connection died. Reconnecting in 5s...');
-            setTimeout(setupWebSocket, 5000);
-        };
-        socket.onerror = (error) => {
-            console.error(`[WebSocket] Error: ${error.message}`);
-            socket.close();
-        };
-        socket.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'full_status') {
-                    appState.system = message.data.system || appState.system;
-                    appState.orchestration = message.data.orchestration || appState.orchestration;
-                    updateFullUI();
-                }
-            } catch (e) {
-                console.warn("Received non-JSON message from WebSocket:", event.data);
-            }
-        };
-    }
-
-    // --- Main UI Update Function ---
-    function updateFullUI() {
-        updateSystemStatusUI(appState.system);
-        updateOrchestrationStatusUI(appState.orchestration);
-    }
-
-    // --- UI Update Sub-routines ---
-    function updateSystemStatusUI(system) {
-        if (!system) return;
-
-        updateToggleSwitch('conveyor', system.conveyor_relay_status);
-        updateToggleSwitch('gate', system.gate_relay_status);
-        updateToggleSwitch('diverter', system.diverter_relay_status);
-        updateToggleSwitch('led_green', system.led_green_status);
-        updateToggleSwitch('led_red', system.led_red_status);
-        updateToggleSwitch('camera_light', system.camera_light_status);
-        updateToggleSwitch('camera_light_two', system.camera_light_two_status);
-        updateToggleSwitch('buzzer', system.buzzer_status);
-
-        updateBadge('status-sensor-1', system.sensor_1_status ? 'BLOCKED' : 'CLEAR', system.sensor_1_status ? 'error' : 'ok');
-        updateBadge('status-sensor-2', system.sensor_2_status ? 'BLOCKED' : 'CLEAR', system.sensor_2_status ? 'error' : 'ok');
-        updateBadge('status-io-module', system.io_module_status, system.io_module_status === 'ok' ? 'ok' : 'error');
-        
-        ui.get('count-on-belt').textContent = system.in_flight_count;
-    }
-
-    function updateOrchestrationStatusUI(orch) {
-        if (!orch) return;
-        ui.get('count-exited').textContent = orch.run_progress;
-        ui.get('conveyor-mode').textContent = orch.mode.toUpperCase();
-        ui.get('conveyor-belt').classList.toggle('running', orch.mode === 'Running');
-        ui.get('active-profile-display').textContent = orch.active_profile || 'None';
-        ui.get('run-detail-batch').textContent = orch.batch_code || 'N/A';
-        ui.get('run-detail-operator').textContent = orch.operator_name || 'N/A';
-        updateProgressCircle(orch.run_progress, orch.target_count);
-        handleAlarm(orch.active_alarm_message);
-        handleCountdown(orch.mode, orch.pause_start_time, orch.post_batch_delay_sec);
-    }
-    
-    // --- UI Helper Functions ---
-    function updateToggleSwitch(name, isActive) {
-        const toggle = document.querySelector(`input[data-control-name="${name}"]`);
-        if (toggle && toggle.checked !== isActive) {
-            toggle.checked = isActive;
-        }
-    }
-
-    function updateBadge(elementId, text, statusClass) {
-        const badge = ui.get(elementId);
-        if (badge) {
-            badge.textContent = text ? text.toUpperCase() : '--';
-            badge.className = 'status-badge';
-            if (statusClass) badge.classList.add(statusClass);
-        }
-    }
-
-    function updateProgressCircle(current, target) {
-        const percentage = (target > 0) ? Math.min(100, (current / target) * 100) : 0;
-        const circumference = 2 * Math.PI * 45;
-        const offset = circumference - (percentage / 100) * circumference;
-        const path = ui.get('progress-path');
-        if(path) {
-            path.style.strokeDasharray = `${circumference} ${circumference}`;
-            path.style.strokeDashoffset = offset;
-        }
-        ui.get('progress-percentage').textContent = `${Math.round(percentage)}%`;
-        ui.get('progress-details').textContent = `${current} / ${target > 0 ? target : '∞'}`;
-    }
-    
-    function handleAlarm(message) {
-        const block = ui.get('run-alarm-block');
-        if (block) {
-            block.style.display = message ? 'flex' : 'none';
-            ui.get('run-alarm-message').textContent = message || '';
-        }
-    }
-
-    function handleCountdown(mode, startTimeStr, delaySec) {
-        const card = ui.get('countdown-timer-card');
-        if (mode === 'Paused (Between Batches)' && startTimeStr) {
-            card.style.display = 'block';
-            if (!appState.ui.countdownInterval) {
-                const endTime = new Date(new Date(startTimeStr).getTime() + delaySec * 1000);
-                appState.ui.countdownInterval = setInterval(() => {
-                    const remaining = endTime - new Date();
-                    if (remaining <= 0) {
-                        clearInterval(appState.ui.countdownInterval);
-                        appState.ui.countdownInterval = null;
-                        ui.get('countdown-timer').textContent = '00:00';
-                        card.style.display = 'none';
-                    } else {
-                        const minutes = String(Math.floor((remaining / 1000) / 60)).padStart(2, '0');
-                        const seconds = String(Math.floor((remaining / 1000) % 60)).padStart(2, '0');
-                        ui.get('countdown-timer').textContent = `${minutes}:${seconds}`;
-                    }
-                }, 1000);
-            }
-        } else {
-            if (appState.ui.countdownInterval) {
-                clearInterval(appState.ui.countdownInterval);
-                appState.ui.countdownInterval = null;
-            }
-            card.style.display = 'none';
-        }
-    }
-    
-    // --- Event Listeners ---
-    document.querySelectorAll('.manual-control-toggle input[type="checkbox"]').forEach(toggle => {
-        toggle.addEventListener('click', function(event) {
-            event.preventDefault(); 
-            const controlName = this.dataset.controlName;
-            fetch(`/api/v1/outputs/toggle/${controlName}`, { method: 'POST' })
-                .catch(error => console.error(`Error toggling ${controlName}:`, error));
-        });
-    });
-
-    ui.get('acknowledge-alarm-btn')?.addEventListener('click', () => {
-        fetch('/api/v1/orchestration/run/acknowledge-alarm', { method: 'POST' });
-    });
-
-    ui.get('start-run-btn')?.addEventListener('click', () => {
-        populateOperatorSelect();
-        ui.get('pre-run-input-view').style.display = 'block';
-        ui.get('pre-run-confirm-view').style.display = 'none';
-        appState.ui.preRunModal.show();
-    });
-
-    ui.get('review-run-btn')?.addEventListener('click', function() {
-        const operatorSelect = ui.get('operator-select');
-        const batchCodeInput = ui.get('batch-code-input');
-        if (!operatorSelect.value || !batchCodeInput.value) {
-            alert('Operator and Batch Code are required.');
-            return;
-        }
-        document.getElementById('confirm-operator').textContent = operatorSelect.options[operatorSelect.selectedIndex].text;
-        document.getElementById('confirm-batch-code').textContent = batchCodeInput.value;
-        document.getElementById('confirm-recipe').textContent = ui.get('object-profile-select').options[ui.get('object-profile-select').selectedIndex].text;
-        document.getElementById('confirm-target').textContent = ui.get('target-count-input').value > 0 ? ui.get('target-count-input').value : 'Continuous';
-        ui.get('pre-run-input-view').style.display = 'none';
-        ui.get('pre-run-confirm-view').style.display = 'block';
-    });
-
-    ui.get('go-back-btn')?.addEventListener('click', () => {
-        ui.get('pre-run-input-view').style.display = 'block';
-        ui.get('pre-run-confirm-view').style.display = 'none';
-    });
-
-    ui.get('start-final-run-btn')?.addEventListener('click', startRun);
-
-    ui.get('stop-run-btn')?.addEventListener('click', () => {
-        fetch('/api/v1/orchestration/run/stop', { method: 'POST' });
-    });
-
-    ui.get('reset-all-btn')?.addEventListener('click', () => {
-        if (confirm('Are you sure you want to perform a full system reset? This will stop all hardware and clear the current run state.')) {
-            fetch('/api/v1/system/reset-all', { method: 'POST' });
-        }
-    });
-
-    ui.get('camera-switcher')?.addEventListener('click', (e) => {
-        if (e.target.classList.contains('camera-select-btn')) {
-            switchCamera(e.target.dataset.cameraId);
-        }
-    });
-    
-    // --- API & Helper Functions ---
-    async function populateOperatorSelect() {
-        try {
-            const response = await fetch('/api/v1/operators/');
-            const operators = await response.json();
-            const operatorSelect = ui.get('operator-select');
-            operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>';
-            operators.filter(op => op.status === 'Active').forEach(op => {
-                operatorSelect.add(new Option(op.name, op.id));
+    function updateFullStatus(data) {
+        if (!data) return;
+        if (data.system) {
+            const sys = data.system;
+            updateBadge(elements.statusSensor1, sys.sensor_1_status, 'TRIGGERED', 'CLEAR');
+            updateBadge(elements.statusSensor2, sys.sensor_2_status, 'TRIGGERED', 'CLEAR');
+            updateBadge(elements.statusIoModule, sys.io_module_status === 'ok', 'OK', 'ERROR');
+            elements.countOnBelt.textContent = sys.in_flight_count || 0;
+            elements.manualControlToggles.forEach(toggle => {
+                const name = toggle.dataset.controlName;
+                toggle.checked = sys[`${name}_relay_status`] || sys[`${name}_status`] || false;
             });
-        } catch (error) {
-            console.error('Failed to load operators:', error);
+        }
+        if (data.orchestration) {
+            const orc = data.orchestration;
+            elements.conveyorMode.textContent = orc.mode || 'N/A';
+            elements.activeProfile.textContent = orc.active_profile || 'None';
+            elements.runDetailBatch.textContent = orc.batch_code || 'N/A';
+            elements.runDetailOperator.textContent = orc.operator_name || 'N/A';
+            elements.countProcessed.textContent = orc.run_progress || 0;
+            const target = orc.target_count || 0;
+            const progress = (target > 0) ? (orc.run_progress / target) * 100 : 0;
+            elements.progressPercentage.textContent = `${Math.round(progress)}%`;
+            elements.progressDetails.textContent = `${orc.run_progress} / ${target > 0 ? target : '∞'}`;
+            const offset = CIRCLE_CIRCUMFERENCE * (1 - (progress / 100));
+            elements.progressPath.style.strokeDashoffset = Math.max(0, offset);
+            elements.alarmBlock.style.display = orc.active_alarm_message ? 'grid' : 'none';
+            elements.alarmMessage.textContent = orc.active_alarm_message || '';
         }
     }
 
-    async function startRun() {
-        const payload = {
-            object_profile_id: parseInt(ui.get('object-profile-select').value, 10),
-            target_count: parseInt(ui.get('target-count-input').value, 10),
-            post_batch_delay_sec: parseInt(ui.get('post-batch-delay-input').value, 10),
-            batch_code: ui.get('batch-code-input').value,
-            operator_id: parseInt(ui.get('operator-select').value, 10),
-        };
-        
+    function updateQcPanel(data) {
+        elements.aiAnnotatedFeed.src = data.annotated_path ? `${data.annotated_path}?t=${new Date().getTime()}` : '/static/images/placeholder.jpg';
+        const summary = data.results || {};
+        const status = summary.overall_status || 'PENDING';
+        elements.aiDetailsQcStatus.textContent = status;
+        updateBadge(elements.aiDetailsQcStatus, status === 'ACCEPT', 'ACCEPT', 'REJECT');
+        elements.aiDetailsReason.textContent = summary.reject_reason || '--';
+        elements.aiDetailsCategory.textContent = summary.primary_detection?.type || '--';
+    }
+    
+    function updateBadge(element, isSuccess, successText = 'ON', failText = 'OFF') {
+        element.textContent = isSuccess ? successText : failText;
+        element.classList.toggle('bg-success', isSuccess);
+        element.classList.toggle('bg-danger', !isSuccess);
+        element.classList.toggle('text-dark', isSuccess);
+    }
+    
+    function animateProduct(serialNumber) {
+        const productDiv = document.createElement('div');
+        productDiv.className = 'conveyor-product';
+        productDiv.id = `product-${serialNumber}`;
+        productDiv.innerHTML = '<i class="bi bi-box-seam"></i>';
+        elements.conveyorBelt.appendChild(productDiv);
+        setTimeout(() => productDiv.style.right = '100%', 10);
+        productDiv.addEventListener('transitionend', () => productDiv.remove());
+    }
+
+    async function apiPost(endpoint, body = {}) {
         try {
-            const response = await fetch('/api/v1/orchestration/run/start', {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(body),
             });
             if (!response.ok) {
-                const errorData = await response.json();
-                alert(`Failed to start run: ${errorData.detail}`);
+                let errorDetail = 'API request failed';
+                try { errorDetail = (await response.json()).detail; } 
+                catch (e) { errorDetail = await response.text(); }
+                throw new Error(errorDetail);
             }
+            return response.json();
         } catch (error) {
-            alert(`An error occurred: ${error.message}`);
+            console.error(`Error with ${endpoint}:`, error);
+            showToast('API Error', error.message, 'bg-danger');
         }
-        appState.ui.preRunModal.hide();
     }
 
-    function switchCamera(camId) {
-        appState.ui.activeCameraId = camId;
-        ui.get('live-camera-feed').src = `/api/v1/camera/stream/${camId}?t=${new Date().getTime()}`;
-        ui.get('live-feed-title').textContent = `LIVE - ${camId.toUpperCase()}`;
-        document.querySelectorAll('.camera-select-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.cameraId === camId);
-        });
+    async function loadOperators() {
+        try {
+            const operators = await (await fetch('/api/v1/operators/')).json();
+            elements.operatorSelect.innerHTML = '<option value="">-- Select Operator --</option>';
+            operators.forEach(op => {
+                const option = new Option(op.name, op.id);
+                elements.operatorSelect.appendChild(option);
+            });
+        } catch (error) { console.error('Failed to load operators:', error); }
     }
 
-    // --- Initial Load ---
-    setupWebSocket();
-    if (appState.ui.activeCameraId) {
-        switchCamera(appState.ui.activeCameraId);
+    function switchLiveCamera(camId) {
+        activeCameraId = camId;
+        elements.liveCameraFeed.src = `/api/v1/camera/stream/${camId}`;
+        elements.cameraSelectBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.cameraId === camId));
     }
+
+    elements.startRunBtn.addEventListener('click', () => {
+        if (!elements.profileSelect.value) { showToast('Error', 'Please select a recipe first.', 'bg-danger'); return; }
+        elements.preRunInputView.style.display = 'block';
+        elements.preRunConfirmView.style.display = 'none';
+        elements.preRunModal.show();
+    });
+
+    elements.reviewRunBtn.addEventListener('click', () => {
+        if (!elements.operatorSelect.value || !elements.batchCodeInput.value) { showToast('Error', 'Operator and Batch Code are required.', 'bg-danger'); return; }
+        elements.confirmOperator.textContent = elements.operatorSelect.options[elements.operatorSelect.selectedIndex].text;
+        elements.confirmBatchCode.textContent = elements.batchCodeInput.value;
+        elements.confirmRecipe.textContent = elements.profileSelect.options[elements.profileSelect.selectedIndex].text;
+        elements.confirmTarget.textContent = elements.targetCountInput.value > 0 ? elements.targetCountInput.value : 'Unlimited';
+        elements.preRunInputView.style.display = 'none';
+        elements.preRunConfirmView.style.display = 'block';
+    });
+
+    elements.goBackBtn.addEventListener('click', () => {
+        elements.preRunInputView.style.display = 'block';
+        elements.preRunConfirmView.style.display = 'none';
+    });
+
+    elements.startFinalRunBtn.addEventListener('click', async () => {
+        const payload = {
+            object_profile_id: parseInt(elements.profileSelect.value),
+            target_count: parseInt(elements.targetCountInput.value),
+            post_batch_delay_sec: parseInt(elements.postBatchDelayInput.value),
+            batch_code: elements.batchCodeInput.value,
+            operator_id: parseInt(elements.operatorSelect.value)
+        };
+        await apiPost('/api/v1/orchestration/run/start', payload);
+        elements.preRunModal.hide();
+    });
+
+    elements.stopRunBtn.addEventListener('click', () => apiPost('/api/v1/orchestration/run/stop'));
+    elements.resetAllBtn.addEventListener('click', () => apiPost('/api/v1/system/reset-all'));
+    elements.ackAlarmBtn.addEventListener('click', () => apiPost('/api/v1/orchestration/run/acknowledge-alarm'));
+    elements.manualControlToggles.forEach(toggle => toggle.addEventListener('change', () => apiPost(`/api/v1/outputs/toggle/${toggle.dataset.controlName}`)));
+    elements.cameraSelectBtns.forEach(btn => btn.addEventListener('click', () => switchLiveCamera(btn.dataset.cameraId)));
+
+    loadOperators();
+    if (activeCameraId) switchLiveCamera(activeCameraId);
 });
